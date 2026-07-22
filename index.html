@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rounds">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#2f6f5e">
+<title>Rounds — Dictation Assistant</title>
+<style>
+  :root {
+    --ink: #1c2521;
+    --ink-soft: #52605b;
+    --ink-faint: #8b968f;
+    --paper: #f6f4ee;
+    --card: #ffffff;
+    --line: #dcd8cc;
+    --pulse: #2f6f5e;
+    --pulse-soft: #e3efe9;
+    --flag: #b5542c;
+    --flag-soft: #fbe9e0;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --serif: 'Source Serif Pro', Georgia, serif;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 28px 20px 80px;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+  .brand {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .brand span { color: var(--pulse); }
+  .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .notice {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--pulse);
+    padding: 12px 14px;
+    border-radius: 2px;
+    margin-bottom: 24px;
+  }
+  .notice b { color: var(--ink); }
+  /* API Key setup card */
+  .setup-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--flag);
+    border-radius: 4px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+  .setup-card h3 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .setup-card p {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+  }
+  .setup-card a { color: var(--pulse); }
+  .key-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .key-input {
+    flex: 1;
+    min-width: 200px;
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 9px 12px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .key-input:focus { outline: 2px solid var(--pulse); border-color: transparent; }
+  .key-saved {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--pulse);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .key-manage-row {
+    display: none;
+    justify-content: flex-end;
+    margin: -12px 0 20px;
+  }
+  .key-manage-link {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    background: none;
+    border: none;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 4px 0;
+  }
+  .key-manage-link:hover { color: var(--pulse); }
+  .user-row {
+    display: none;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .user-row span {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+  }
+  .auth-gate p {
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+    margin: 0 0 16px;
+  }
+  .dictate-options {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .opt-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    flex: 1;
+    min-width: 160px;
+  }
+  .opt-field select {
+    font-family: var(--sans);
+    font-size: 13.5px;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--ink);
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--paper);
+  }
+  .opt-field select:focus { outline: 2px solid var(--pulse); border-color: transparent; }
+  .stage {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .rec-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .rec-btn {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 2px solid var(--pulse);
+    background: var(--pulse-soft);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    position: relative;
+    transition: transform 0.12s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .rec-btn:active { transform: scale(0.96); }
+  .rec-btn .dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--pulse);
+    transition: all 0.15s ease;
+  }
+  .rec-btn.live {
+    background: var(--flag-soft);
+    border-color: var(--flag);
+  }
+  .rec-btn.live .dot {
+    background: var(--flag);
+    border-radius: 4px;
+    width: 18px;
+    height: 18px;
+  }
+  .rec-btn.live::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 1.5px solid var(--flag);
+    opacity: 0.5;
+    animation: ring 1.6s ease-out infinite;
+  }
+  @keyframes ring {
+    0% { transform: scale(0.85); opacity: 0.6; }
+    100% { transform: scale(1.25); opacity: 0; }
+  }
+  .rec-status {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .rec-status .clock {
+    display: block;
+    font-size: 20px;
+    color: var(--ink);
+    margin-top: 2px;
+    letter-spacing: 0.02em;
+  }
+  .transcript {
+    margin-top: 20px;
+    min-height: 120px;
+    max-height: 320px;
+    overflow-y: auto;
+    font-family: var(--serif);
+    font-size: 16px;
+    line-height: 1.65;
+    color: var(--ink);
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+  .transcript .placeholder {
+    color: var(--ink-faint);
+    font-family: var(--sans);
+    font-size: 14px;
+    font-style: italic;
+  }
+  .interim { color: var(--ink-faint); }
+  .controls-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+  }
+  button.action {
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: 3px;
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button.action.secondary {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  button.action:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  button.action:hover:not(:disabled) { opacity: 0.88; }
+  .section-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-faint);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-label::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+  }
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink-soft);
+    padding: 14px 0;
+  }
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid var(--line);
+    border-top-color: var(--pulse);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .note-output {
+    font-family: var(--serif);
+    font-size: 15.5px;
+    line-height: 1.7;
+    color: var(--ink);
+    white-space: pre-wrap;
+  }
+  .note-output .note-heading {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--pulse);
+    margin: 18px 0 4px;
+  }
+  .note-output .note-heading:first-child { margin-top: 0; }
+  .note-output[contenteditable="true"] {
+    border-radius: 3px;
+    padding: 4px 6px;
+    margin: -4px -6px;
+    transition: box-shadow 0.15s ease;
+  }
+  .note-output[contenteditable="true"]:hover {
+    box-shadow: 0 0 0 1px var(--line);
+  }
+  .note-output[contenteditable="true"]:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--pulse-soft), 0 0 0 1px var(--pulse);
+  }
+  .editable-hint {
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    font-style: italic;
+    margin-bottom: 10px;
+  }
+  .flags { margin-top: 18px; }
+  .flag-item {
+    background: var(--flag-soft);
+    border-left: 3px solid var(--flag);
+    padding: 10px 14px;
+    border-radius: 2px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: #5e2c14;
+    margin-bottom: 8px;
+  }
+  .flag-item b {
+    display: block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--flag);
+    margin-bottom: 3px;
+  }
+  .empty-flags {
+    font-size: 13px;
+    color: var(--ink-faint);
+    font-style: italic;
+  }
+  textarea.manual {
+    width: 100%;
+    min-height: 80px;
+    font-family: var(--serif);
+    font-size: 15px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 10px 12px;
+    resize: vertical;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .copy-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 14px;
+  }
+  .codes-notice {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    background: var(--pulse-soft);
+    border-left: 3px solid var(--pulse);
+    padding: 10px 12px;
+    border-radius: 2px;
+    margin-bottom: 14px;
+  }
+  .code-item {
+    display: flex;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .code-item:last-child { border-bottom: none; }
+  .code-check {
+    width: 17px;
+    height: 17px;
+    margin-top: 2px;
+    accent-color: var(--pulse);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .code-pill {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--pulse);
+    background: var(--pulse-soft);
+    padding: 3px 8px;
+    border-radius: 3px;
+    height: fit-content;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .code-pill.uncertain {
+    color: var(--flag);
+    background: var(--flag-soft);
+  }
+  .code-body { flex: 1; min-width: 0; }
+  .code-label {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 2px;
+  }
+  .code-rationale {
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+  }
+  .code-rationale.uncertain-text { color: var(--flag); }
+  .err {
+    font-size: 13px;
+    color: var(--flag);
+    margin-top: 10px;
+    line-height: 1.5;
+  }
+  @media print {
+    .no-print { display: none !important; }
+    .code-check { display: none !important; }
+    body { background: #fff; }
+    .stage { border: none; box-shadow: none; padding: 0; margin-bottom: 22px; }
+    .note-output[contenteditable="true"] { box-shadow: none !important; padding: 0; margin: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">Rounds<span>.</span></div>
+    <div class="tag">dictation assistant</div>
+  </header>
+
+  <div class="user-row no-print" id="userRow">
+    <span id="userLabel"></span>
+    <button class="key-manage-link" id="signOutBtn" type="button">Sign out</button>
+  </div>
+
+  <!-- Auth gate: nothing below this is shown until Microsoft sign-in succeeds -->
+  <div class="stage auth-gate no-print" id="authGate">
+    <div class="section-label">Sign in</div>
+    <p>Rounds requires signing in with your Microsoft account before it can be used.</p>
+    <button class="action" id="signInBtn">Sign in with Microsoft</button>
+    <div class="err" id="authError"></div>
+  </div>
+
+  <div id="appContent" style="display:none;">
+
+  <!-- API Key setup -->
+  <div class="setup-card no-print" id="setupCard">
+    <h3>Enter your Anthropic API key</h3>
+    <p>This app uses Claude to organize your dictations. You need a free API key from Anthropic — get one at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>. Your key is saved locally on this device and never sent anywhere except Anthropic.</p>
+    <div class="key-row">
+      <input type="password" class="key-input" id="apiKeyInput" placeholder="sk-ant-api03-..." autocomplete="off" spellcheck="false">
+      <button class="action" id="saveKeyBtn">Save key</button>
+    </div>
+    <div class="key-saved" id="keySaved" style="display:none;">&#10003; Key saved — you're ready to dictate</div>
+  </div>
+
+  <div class="key-manage-row no-print" id="keyManageRow">
+    <button class="key-manage-link" id="changeKeyBtn" type="button">Change saved API key</button>
+  </div>
+
+  <div class="notice no-print">
+    <b>Before you dictate:</b> transcription runs through your browser's built-in speech recognition, which sends audio to your browser vendor's servers (Google on Chrome/Android, Apple on Safari/iOS). This is fine for testing, drafts, or de-identified dictation — it is <b>not HIPAA-compliant</b> for real patient encounters without a signed BAA.
+  </div>
+
+  <!-- Dictation stage -->
+  <div class="stage no-print">
+    <div class="section-label">Dictate</div>
+    <div class="dictate-options">
+      <label class="opt-field">
+        <span>Visit type</span>
+        <select id="visitTypeSelect">
+          <option value="general">General / unspecified</option>
+          <option value="new-patient">New patient visit</option>
+          <option value="follow-up">Follow-up visit</option>
+          <option value="procedure">Procedure</option>
+          <option value="telehealth">Telehealth visit</option>
+          <option value="annual">Annual / wellness exam</option>
+        </select>
+      </label>
+      <label class="opt-field">
+        <span>Dictation language</span>
+        <select id="dictationLangSelect">
+          <option value="en-US">English</option>
+          <option value="es-US">Spanish</option>
+          <option value="fr-FR">French</option>
+          <option value="zh-CN">Mandarin</option>
+          <option value="hi-IN">Hindi</option>
+          <option value="ar-SA">Arabic</option>
+          <option value="pt-BR">Portuguese</option>
+          <option value="vi-VN">Vietnamese</option>
+        </select>
+      </label>
+    </div>
+    <div class="rec-row">
+      <button class="rec-btn" id="recBtn" aria-label="Start recording">
+        <div class="dot"></div>
+      </button>
+      <div class="rec-status">
+        <span id="recLabel">Tap to start dictating</span>
+        <span class="clock" id="clock">00:00</span>
+      </div>
+    </div>
+    <div class="transcript" id="transcript">
+      <span class="placeholder">Your raw dictation will appear here as you speak, in whatever order you say it.</span>
+    </div>
+    <div class="controls-row">
+      <button class="action" id="processBtn" disabled>Organize &amp; check dictation</button>
+      <button class="action secondary" id="clearBtn">Clear</button>
+    </div>
+    <div class="err" id="speechErr"></div>
+  </div>
+
+  <!-- Manual text fallback -->
+  <div class="stage no-print" id="manualStage" style="display:none;">
+    <div class="section-label">No mic — type or paste instead</div>
+    <textarea class="manual" id="manualInput" placeholder="Paste or type the raw dictation here, in any order..."></textarea>
+    <div class="controls-row">
+      <button class="action" id="processManualBtn">Organize &amp; check dictation</button>
+    </div>
+  </div>
+
+  <!-- Result: organized note -->
+  <div class="stage" id="resultStage" style="display:none;">
+    <div class="section-label">Chronological note</div>
+    <div class="editable-hint no-print" id="noteEditHint" style="display:none;">Click into the note to edit it — your changes are included when you copy, download, or print.</div>
+    <div id="resultArea"></div>
+    <div class="flags" id="flagsArea"></div>
+    <div class="copy-row">
+      <button class="action secondary" id="copyBtn">Copy note</button>
+    </div>
+  </div>
+
+  <!-- Result: patient-facing summary -->
+  <div class="stage" id="summaryStage" style="display:none;">
+    <div class="section-label">Patient after-visit summary</div>
+    <div class="editable-hint no-print" id="summaryEditHint" style="display:none;">Plain-language summary for the patient — click to edit before sharing.</div>
+    <div id="summaryArea"></div>
+    <div class="copy-row">
+      <button class="action secondary" id="copySummaryBtn">Copy summary</button>
+    </div>
+  </div>
+
+  <!-- Result: billing codes -->
+  <div class="stage" id="codesStage" style="display:none;">
+    <div class="section-label">Suggested billing codes</div>
+    <div class="codes-notice no-print"><b>Suggestions only — not verified.</b> These are AI-generated estimates of likely ICD-10 and CPT codes based on what was dictated. A certified coder or billing provider should confirm every code before submission. Check off each code below to confirm you've reviewed it — all codes must be checked before you can copy the list.</div>
+    <div id="codesArea"></div>
+    <div class="copy-row">
+      <button class="action secondary" id="copyCodesBtn" disabled>Copy codes</button>
+    </div>
+  </div>
+
+  <!-- Export -->
+  <div class="stage no-print" id="exportStage" style="display:none;">
+    <div class="section-label">Export</div>
+    <div class="controls-row">
+      <button class="action secondary" id="downloadTxtBtn">Download as text (.txt)</button>
+      <button class="action secondary" id="printBtn">Print / Save as PDF</button>
+    </div>
+  </div>
+
+  </div><!-- /#appContent -->
+
+</div>
+<script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js" integrity="sha384-PARf28kmic36Ve+O3DnUerRXFtOQ7ZDqRDGpLcbljly5/N39T2OV3kt3QsWOKeAX" crossorigin="anonymous"></script>
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let recognition = null;
+let listening = false;
+let finalTranscript = "";
+let accumulatedMs = 0;   // total recorded time across pause/resume sessions
+let sessionStart = null; // start time of current active session
+let clockInterval = null;
+let speechSupported = true;
+let noSpeechStreak = 0; // consecutive "no-speech" errors with no result in between
+
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+const setupCard      = document.getElementById('setupCard');
+const apiKeyInput    = document.getElementById('apiKeyInput');
+const saveKeyBtn     = document.getElementById('saveKeyBtn');
+const keySaved       = document.getElementById('keySaved');
+const keyManageRow   = document.getElementById('keyManageRow');
+const changeKeyBtn   = document.getElementById('changeKeyBtn');
+const recBtn         = document.getElementById('recBtn');
+const recLabel       = document.getElementById('recLabel');
+const clockEl        = document.getElementById('clock');
+const transcriptEl   = document.getElementById('transcript');
+const processBtn     = document.getElementById('processBtn');
+const clearBtn       = document.getElementById('clearBtn');
+const speechErr      = document.getElementById('speechErr');
+const manualStage    = document.getElementById('manualStage');
+const manualInput    = document.getElementById('manualInput');
+const processManualBtn = document.getElementById('processManualBtn');
+const resultStage    = document.getElementById('resultStage');
+const resultArea     = document.getElementById('resultArea');
+const noteEditHint   = document.getElementById('noteEditHint');
+const flagsArea      = document.getElementById('flagsArea');
+const copyBtn        = document.getElementById('copyBtn');
+const summaryStage   = document.getElementById('summaryStage');
+const summaryArea    = document.getElementById('summaryArea');
+const summaryEditHint = document.getElementById('summaryEditHint');
+const copySummaryBtn = document.getElementById('copySummaryBtn');
+const codesStage     = document.getElementById('codesStage');
+const codesArea      = document.getElementById('codesArea');
+const copyCodesBtn   = document.getElementById('copyCodesBtn');
+const exportStage    = document.getElementById('exportStage');
+const downloadTxtBtn = document.getElementById('downloadTxtBtn');
+const printBtn       = document.getElementById('printBtn');
+const visitTypeSelect     = document.getElementById('visitTypeSelect');
+const dictationLangSelect = document.getElementById('dictationLangSelect');
+
+// ─── Microsoft sign-in (MSAL) ──────────────────────────────────────────────────
+// Gates the entire app behind a Microsoft Entra ID sign-in. #authGate and
+// #appContent are toggled based on auth state; nothing under #appContent
+// is reachable until MSAL confirms a signed-in account.
+const authGate   = document.getElementById('authGate');
+const appContent = document.getElementById('appContent');
+const signInBtn  = document.getElementById('signInBtn');
+const authError  = document.getElementById('authError');
+const userRow    = document.getElementById('userRow');
+const userLabel  = document.getElementById('userLabel');
+const signOutBtn = document.getElementById('signOutBtn');
+
+const msalConfig = {
+  auth: {
+    clientId: "35067c24-0660-47a8-900f-ebbc441fec20",
+    authority: "https://login.microsoftonline.com/3eb0384a-1792-4525-a688-da6dc118af51",
+    // Derived from wherever this page is actually being loaded from
+    // (origin + path, no query string or hash) so the same file works
+    // whether it's served locally at http://localhost:8000/ or from a real
+    // host like GitHub Pages — without needing a code edit every time the
+    // hosting location changes. The exact value this resolves to still has
+    // to be registered as a redirect URI on the app's "Single-page
+    // application" platform in Azure, or sign-in will fail with
+    // redirect_uri_mismatch. Add each place you serve this from (localhost
+    // for local testing, plus your real host's URL) as its own entry in
+    // Azure — you can register more than one at a time.
+    redirectUri: window.location.origin + window.location.pathname
+  },
+  cache: {
+    // sessionStorage means signing in again after the browser tab/window
+    // is fully closed, rather than staying signed in indefinitely — a
+    // deliberate tradeoff favoring security over convenience for an app
+    // that may eventually handle real patient content. Switch to
+    // "localStorage" below if staying signed in across sessions matters
+    // more to you than that extra margin of safety.
+    cacheLocation: "sessionStorage",
+    storeAuthStateInCookie: false
+  }
+};
+
+// If the MSAL script tag above fails to load for any reason (network
+// policy blocking the CDN, an ad/privacy blocker, a transient outage),
+// `msal` never gets defined. The app should stay locked either way — it
+// can't safely confirm anyone's identity without this library — but
+// without this guard, the failure would surface as a silent, uncaught
+// "msal is not defined" console error with a blank/broken-looking page
+// and no clue why. This shows a clear, actionable message on the sign-in
+// screen instead, then deliberately stops the rest of the script (the
+// dictation/recording code further down) from initializing, since none
+// of it is reachable while signed out anyway.
+if (typeof msal === "undefined") {
+  authGate.style.display = "block";
+  authError.textContent = "Couldn't load the Microsoft sign-in library. Check your internet connection (or whether something is blocking alcdn.msauth.net) and reload the page.";
+  signInBtn.disabled = true;
+  throw new Error("msal-browser failed to load — aborting further script execution.");
+}
+
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+function showApp(account) {
+  authGate.style.display = "none";
+  appContent.style.display = "block";
+  userRow.style.display = "flex";
+  userLabel.textContent = "Signed in as " + (account.username || account.name || "");
+}
+
+function showSignIn(errorMsg) {
+  appContent.style.display = "none";
+  userRow.style.display = "none";
+  authGate.style.display = "block";
+  authError.textContent = errorMsg || "";
+}
+
+signInBtn.addEventListener('click', () => {
+  authError.textContent = "";
+  msalInstance.loginRedirect({ scopes: ["User.Read"] });
+});
+
+signOutBtn.addEventListener('click', () => {
+  msalInstance.logoutRedirect();
+});
+
+(async function initAuth() {
+  try {
+    const response = await msalInstance.handleRedirectPromise();
+    let account = null;
+    if (response && response.account) {
+      account = response.account;
+      msalInstance.setActiveAccount(account);
+    } else {
+      const accounts = msalInstance.getAllAccounts();
+      if (accounts.length > 0) {
+        account = accounts[0];
+        msalInstance.setActiveAccount(account);
+      }
+    }
+    if (account) {
+      showApp(account);
+    } else {
+      showSignIn();
+    }
+  } catch (err) {
+    showSignIn("Sign-in error: " + err.message);
+  }
+})();
+
+// ─── API key persistence ──────────────────────────────────────────────────────
+function getApiKey() {
+  return localStorage.getItem('rounds_api_key') || '';
+}
+
+(function initKey() {
+  const saved = getApiKey();
+  if (saved) {
+    apiKeyInput.value = saved;
+    setupCard.style.display = 'none';
+    keyManageRow.style.display = 'flex';
+  }
+})();
+
+saveKeyBtn.addEventListener('click', () => {
+  const key = apiKeyInput.value.trim();
+  if (!key.startsWith('sk-')) {
+    apiKeyInput.style.outline = '2px solid var(--flag)';
+    setTimeout(() => { apiKeyInput.style.outline = ''; }, 1500);
+    return;
+  }
+  localStorage.setItem('rounds_api_key', key);
+  saveKeyBtn.textContent = 'Saved ✓';
+  setTimeout(() => {
+    setupCard.style.display = 'none';
+    keyManageRow.style.display = 'flex';
+    saveKeyBtn.textContent = 'Save key';
+  }, 800);
+});
+
+// Lets someone re-open the setup card to swap in a new key (e.g. after
+// revoking/rotating it) without having to clear localStorage by hand.
+changeKeyBtn.addEventListener('click', () => {
+  setupCard.style.display = 'block';
+  keyManageRow.style.display = 'none';
+  apiKeyInput.focus();
+  setupCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+// ─── Speech recognition setup ─────────────────────────────────────────────────
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (!SpeechRecognition) {
+  speechSupported = false;
+  recBtn.disabled = true;
+  recLabel.textContent = "Mic not supported — use text entry below";
+  manualStage.style.display = "block";
+} else {
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = dictationLangSelect.value;
+  recognition.maxAlternatives = 1;
+
+  // Changing the language mid-recording only takes effect on the next
+  // start, since the underlying recognition session doesn't support
+  // switching languages while live.
+  dictationLangSelect.addEventListener('change', () => {
+    recognition.lang = dictationLangSelect.value;
+  });
+
+  recognition.onresult = (event) => {
+    noSpeechStreak = 0; // getting any result at all proves audio is reaching the recognizer
+    let interim = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const piece = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += piece + " ";
+      } else {
+        interim += piece;
+      }
+    }
+    renderTranscript(interim);
+  };
+
+  recognition.onerror = (event) => {
+    // "no-speech" fires constantly on iOS during normal pauses, which is
+    // why it's not normally surfaced. But if it's ALL we ever get — never
+    // a single result — that usually means the mic isn't actually
+    // reaching the browser at all (OS-level mic permission blocked for
+    // Chrome, wrong input device selected, a muted/disconnected mic, or
+    // another app holding it). Previously this failed completely
+    // silently: recognition looked "on" forever with nothing to show for
+    // it and no explanation. Surface a hint after a few consecutive
+    // misses instead of staying silent indefinitely.
+    if (event.error === 'no-speech') {
+      noSpeechStreak++;
+      if (noSpeechStreak >= 4) {
+        speechErr.textContent = "Not picking up any audio after several tries. Check: your system's microphone privacy settings allow Chrome, the correct input device is selected (Chrome's site settings, via the icon left of the address bar), the mic isn't muted, and no other app is currently using it.";
+        manualStage.style.display = "block";
+      }
+      return;
+    }
+    if (event.error === 'aborted') return;
+
+    // These are not recoverable by just restarting recognition (permission
+    // denied, no mic, blocked service, or the network to the recognition
+    // service is down). Without this, onend below would keep calling
+    // recognition.start() in an infinite error loop.
+    const fatal = ['not-allowed', 'audio-capture', 'service-not-allowed', 'network'];
+    if (fatal.includes(event.error)) {
+      listening = false;
+      recBtn.classList.remove('live');
+      recBtn.setAttribute('aria-label', 'Start recording');
+      recLabel.textContent = "Tap to start dictating";
+      pauseClock();
+    }
+
+    speechErr.textContent = "Mic error: " + event.error + ". Use the text entry below if this persists.";
+    manualStage.style.display = "block";
+  };
+
+  // Auto-restart while still in listening mode (iOS Safari stops recognition frequently)
+  recognition.onend = () => {
+    if (listening) {
+      try { recognition.start(); } catch(e) { /* already started */ }
+    }
+  };
+}
+
+// ─── Transcript rendering ─────────────────────────────────────────────────────
+function renderTranscript(interim) {
+  if (!finalTranscript && !interim) {
+    transcriptEl.innerHTML = '<span class="placeholder">Your raw dictation will appear here as you speak, in whatever order you say it.</span>';
+    processBtn.disabled = true;
+    return;
+  }
+  transcriptEl.innerHTML = escapeHtml(finalTranscript) +
+    (interim ? '<span class="interim">' + escapeHtml(interim) + '</span>' : '');
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  processBtn.disabled = finalTranscript.trim().length === 0;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// The model returns the note as plain text with section headers on their
+// own line (e.g. "Chief Complaint:", "History of Present Illness:") per
+// the system prompt. Rendered as one flat block, that reads like an
+// undifferentiated wall of text rather than an actual chart note. This
+// picks out header-shaped lines — short, no sentence punctuation, ending
+// in a colon — and bolds them, without assuming an exact fixed list of
+// section names (the model doesn't always phrase them identically).
+function renderNoteText(note) {
+  if (!note) return '';
+  const headerPattern = /^[A-Za-z][A-Za-z0-9 /&'-]{1,48}:$/;
+  return note.split('\n').map(line => {
+    const trimmed = line.trim();
+    if (trimmed.length > 0 && trimmed.length <= 50 && headerPattern.test(trimmed)) {
+      return '<div class="note-heading">' + escapeHtml(trimmed) + '</div>';
+    }
+    return escapeHtml(line);
+  }).join('\n');
+}
+
+// ─── Clock (accumulates across pause/resume) ──────────────────────────────────
+function formatClock(ms) {
+  const totalSec = Math.floor(ms / 1000);
+  const m = String(Math.floor(totalSec / 60)).padStart(2, '0');
+  const s = String(totalSec % 60).padStart(2, '0');
+  return m + ":" + s;
+}
+
+function startClock() {
+  sessionStart = Date.now();
+  clockInterval = setInterval(() => {
+    clockEl.textContent = formatClock(accumulatedMs + (Date.now() - sessionStart));
+  }, 250);
+}
+
+function pauseClock() {
+  if (sessionStart !== null) {
+    accumulatedMs += Date.now() - sessionStart;
+    sessionStart = null;
+  }
+  clearInterval(clockInterval);
+}
+
+function resetClock() {
+  clearInterval(clockInterval);
+  accumulatedMs = 0;
+  sessionStart = null;
+  clockEl.textContent = "00:00";
+}
+
+// ─── Record button ────────────────────────────────────────────────────────────
+recBtn.addEventListener('click', () => {
+  if (!speechSupported) return;
+
+  if (!listening) {
+    listening = true;
+    speechErr.textContent = "";
+    noSpeechStreak = 0;
+    try { recognition.start(); } catch(e) {}
+    recBtn.classList.add('live');
+    recBtn.setAttribute('aria-label', 'Pause recording');
+    recLabel.textContent = "Recording — tap to pause";
+    startClock();
+  } else {
+    listening = false;
+    try { recognition.stop(); } catch(e) {}
+    recBtn.classList.remove('live');
+    recBtn.setAttribute('aria-label', 'Resume recording');
+    recLabel.textContent = "Paused — tap to resume";
+    pauseClock();
+  }
+});
+
+// ─── Clear ────────────────────────────────────────────────────────────────────
+clearBtn.addEventListener('click', () => {
+  // Stop recording if active
+  if (listening) {
+    listening = false;
+    try { recognition.stop(); } catch(e) {}
+    recBtn.classList.remove('live');
+  }
+  recBtn.setAttribute('aria-label', 'Start recording');
+  finalTranscript = "";
+  renderTranscript("");
+  resetClock();
+  recLabel.textContent = "Tap to start dictating";
+  resultStage.style.display = "none";
+  summaryStage.style.display = "none";
+  codesStage.style.display = "none";
+  exportStage.style.display = "none";
+  flagsArea.innerHTML = "";
+  speechErr.textContent = "";
+});
+
+// ─── Process buttons ──────────────────────────────────────────────────────────
+processBtn.addEventListener('click', () => {
+  // Stop recording before processing
+  if (listening) {
+    listening = false;
+    try { recognition.stop(); } catch(e) {}
+    recBtn.classList.remove('live');
+    recBtn.setAttribute('aria-label', 'Resume recording');
+    recLabel.textContent = "Tap to resume dictating";
+    pauseClock();
+  }
+  processDictation(finalTranscript.trim());
+});
+
+processManualBtn.addEventListener('click', () => {
+  const text = manualInput.value.trim();
+  if (text) processDictation(text);
+});
+
+// ─── Visit-type prompt guidance ────────────────────────────────────────────────
+// Extra instructions folded into the system prompt based on the selected
+// visit type, so the note/coding emphasis matches the kind of encounter
+// this actually was instead of one generic prompt for everything.
+const VISIT_TYPE_GUIDANCE = {
+  'general': '',
+  'new-patient': 'Additional context: this is a NEW PATIENT visit. Include a full Past Medical/Surgical History, Medications, Allergies, and Social History if any of that was dictated, and only suggest new-patient E/M codes (99202-99205) if the depth of history, exam, and medical decision-making actually supports that level.',
+  'follow-up': 'Additional context: this is a FOLLOW-UP visit for an established patient. Emphasize interval history (what has changed since the last visit) and response to prior treatment over a full past history, and use established-patient E/M codes (99212-99215) rather than new-patient codes.',
+  'procedure': 'Additional context: this encounter includes a PROCEDURE. Pay close attention to any procedure or service explicitly described and suggest the relevant CPT procedure code(s) in addition to any separately documented E/M code, and note that modifier -25 may apply if a significant, separately identifiable E/M service was also documented on the same day.',
+  'telehealth': 'Additional context: this was a TELEHEALTH visit. Do not infer or invent any physical exam findings that require in-person contact unless they were explicitly dictated, and flag if it is unclear whether this was an audio-only or video visit, since that can affect which E/M code applies.',
+  'annual': 'Additional context: this is an ANNUAL/WELLNESS exam. Look for preventive medicine CPT codes (e.g. 99381-99397) in addition to any problem-focused codes for separate issues addressed during the same visit.'
+};
+
+// ─── Main processing function ─────────────────────────────────────────────────
+async function processDictation(rawText) {
+  if (!rawText) return;
+
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    resultStage.style.display = "block";
+    resultArea.innerHTML = '<div class="err">No API key saved. Enter your Anthropic API key in the setup box at the top of the page.</div>';
+    resultStage.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  resultStage.style.display = "block";
+  codesStage.style.display = "none";
+  summaryStage.style.display = "none";
+  exportStage.style.display = "none";
+  noteEditHint.style.display = "none";
+  summaryEditHint.style.display = "none";
+  resultArea.innerHTML = '<div class="loading"><div class="spinner"></div>Organizing dictation and checking for inconsistencies…</div>';
+  flagsArea.innerHTML = "";
+  resultStage.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  const visitGuidance = VISIT_TYPE_GUIDANCE[visitTypeSelect.value] || '';
+
+  const systemPrompt = `You are a clinical dictation assistant. You receive raw, possibly out-of-order, spoken dictation from a doctor and must:
+
+1. Reorganize into a clear chronological clinical narrative using standard sections (Chief Complaint, History of Present Illness, Review of Systems, Past Medical/Surgical History, Medications, Allergies, Physical Exam, Assessment, Plan) — only include sections with dictated content. Do not invent any clinical facts.
+2. Preserve all clinically meaningful information exactly as stated. Lightly clean up filler words and false starts without changing meaning.
+3. Identify internal inconsistencies: contradictory history, conflicting timelines, allergy-medication conflicts, mismatched values stated twice differently. Only flag real contradictions, not vagueness.
+4. Suggest billing codes from the dictation only:
+   - ICD-10-CM codes for each documented diagnosis or symptom
+   - CPT codes for any procedures or services explicitly described
+   - E/M visit level (CPT 99202-99215) only if the dictation contains enough detail on history, exam, and medical decision-making — otherwise mark uncertain
+   - Each code needs a one-sentence rationale tied to specific dictated content
+   - If specificity is missing (laterality, episode, severity), note it and mark uncertain
+   - Never invent codes for things not stated
+5. Write a short patient-facing after-visit summary in plain, non-clinical language — no jargon, no code numbers, no Latin abbreviations — covering what was discussed and what the patient should do next. Base it only on the dictated content; do not add advice that wasn't discussed.
+6. The raw dictation may be in a language other than English. Always write the note, flags, and patient summary in English, translating faithfully without adding, omitting, or softening any clinical facts.
+${visitGuidance ? '\n' + visitGuidance + '\n' : ''}
+Return ONLY valid JSON with no markdown fences, no preamble:
+{"note":"full reorganized note as plain text with section headers","patientSummary":"plain-language after-visit summary written for the patient","flags":[{"issue":"brief inconsistency title","detail":"quote or paraphrase of conflicting content"}],"codes":[{"code":"ICD-10: X00.0 or CPT: 99213","label":"human-readable description","rationale":"one sentence tying to dictated content","uncertain":false}]}
+
+Empty arrays for flags and codes if none apply.`;
+
+  // Abort the request if it hangs indefinitely instead of leaving the
+  // spinner running forever with no way to recover.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [{ role: "user", content: "Raw dictation:\n\n" + rawText }]
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      const msg = errData?.error?.message || response.statusText || "Unknown error";
+      if (response.status === 401) {
+        resultArea.innerHTML = '<div class="err">Invalid API key. Use "Change saved API key" above to update it — it should start with <code>sk-ant-</code>.</div>';
+      } else {
+        resultArea.innerHTML = '<div class="err">API error ' + response.status + ': ' + escapeHtml(msg) + '</div>';
+      }
+      return;
+    }
+
+    const data = await response.json();
+    const textBlock = data.content && data.content.find(b => b.type === "text");
+
+    if (!textBlock || !textBlock.text) {
+      resultArea.innerHTML = '<div class="err">Received an empty response from the API. Please try again.</div>';
+      return;
+    }
+
+    let parsed;
+    try {
+      const cleaned = textBlock.text.replace(/```json|```/g, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      // The response either got cut off before the JSON was complete
+      // (stop_reason "max_tokens") or came back malformed for some other
+      // reason. Either way, dumping the broken/partial JSON into the note
+      // area as if it were a clinical note is misleading — say plainly
+      // what happened instead, and keep the codes panel hidden since we
+      // have no reliable codes to show.
+      const truncated = data.stop_reason === "max_tokens";
+      resultArea.innerHTML = '<div class="err">' + (truncated
+        ? "The response was cut off before it finished (the dictation may be too long for one pass). Try again, or process it in smaller chunks."
+        : "Couldn't parse the AI's response into a note. Please try again.") + '</div>';
+      codesStage.style.display = "none";
+      return;
+    }
+
+    // Render note — contenteditable so mistakes (like the mismatched code
+    // label we found during testing) can be corrected before the note is
+    // copied, downloaded, or printed anywhere.
+    resultArea.innerHTML = '<div class="note-output" contenteditable="true" spellcheck="true">' + renderNoteText(parsed.note || '') + '</div>';
+    noteEditHint.style.display = "block";
+
+    // Render patient-facing summary (also editable, same reasoning as the note)
+    summaryStage.style.display = "block";
+    if (parsed.patientSummary && parsed.patientSummary.trim()) {
+      summaryArea.innerHTML = '<div class="note-output" contenteditable="true" spellcheck="true">' + escapeHtml(parsed.patientSummary.trim()) + '</div>';
+      summaryEditHint.style.display = "block";
+    } else {
+      summaryArea.innerHTML = '<div class="empty-flags">No patient summary could be generated.</div>';
+      summaryEditHint.style.display = "none";
+    }
+
+    // Render flags
+    if (parsed.flags && parsed.flags.length > 0) {
+      flagsArea.innerHTML = '<div class="section-label" style="margin-top:20px;">Flagged for review</div>' +
+        parsed.flags.map(f =>
+          `<div class="flag-item"><b>${escapeHtml(f.issue)}</b>${escapeHtml(f.detail)}</div>`
+        ).join("");
+    } else {
+      flagsArea.innerHTML = '<div class="section-label" style="margin-top:20px;">Flagged for review</div><div class="empty-flags">No inconsistencies detected.</div>';
+    }
+
+    // Render billing codes, each with its own sign-off checkbox. "Copy
+    // codes" stays disabled until every listed code has been checked off,
+    // so the "confirm before submission" disclaimer is an actual gate
+    // rather than just text someone can skim past.
+    codesStage.style.display = "block";
+    if (parsed.codes && parsed.codes.length > 0) {
+      codesArea.innerHTML = parsed.codes.map((c, i) => `
+        <div class="code-item">
+          <input type="checkbox" class="code-check" id="code-check-${i}" aria-label="Confirm this code has been reviewed">
+          <div class="code-pill${c.uncertain ? ' uncertain' : ''}">${escapeHtml(c.code)}</div>
+          <div class="code-body">
+            <div class="code-label">${escapeHtml(c.label)}</div>
+            <div class="code-rationale${c.uncertain ? ' uncertain-text' : ''}">${escapeHtml(c.rationale)}</div>
+          </div>
+        </div>`).join("");
+      copyCodesBtn.disabled = true;
+      copyCodesBtn.textContent = 'Confirm all codes to copy';
+    } else {
+      codesArea.innerHTML = '<div class="empty-flags">No billing codes could be confidently inferred from this dictation.</div>';
+      copyCodesBtn.disabled = false;
+      copyCodesBtn.textContent = 'Copy codes';
+    }
+
+    exportStage.style.display = "block";
+
+    // Successful run — clear the working transcript so the next dictation
+    // starts fresh instead of silently appending to (and reprocessing)
+    // this visit's already-organized content. Corrections now happen
+    // directly in the editable note/summary above instead.
+    finalTranscript = "";
+    renderTranscript("");
+    resetClock();
+    recLabel.textContent = "Tap to start dictating";
+    recBtn.setAttribute('aria-label', 'Start recording');
+    manualInput.value = "";
+
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      resultArea.innerHTML = '<div class="err">The request took too long and timed out. Check your connection and try again.</div>';
+    } else {
+      resultArea.innerHTML = '<div class="err">Network error — check your internet connection and try again.<br><small>' + escapeHtml(err.message) + '</small></div>';
+    }
+  }
+}
+
+// ─── Copy buttons ─────────────────────────────────────────────────────────────
+async function copyText(el, btn, originalLabel) {
+  try {
+    await navigator.clipboard.writeText(el.innerText);
+    btn.textContent = "Copied ✓";
+  } catch (e) {
+    // Fallback for browsers that block clipboard without user gesture.
+    // execCommand returns a boolean success flag — it was previously
+    // ignored, so a failed fallback still claimed "Copied ✓".
+    let ok = false;
+    try {
+      const range = document.createRange();
+      range.selectNode(el);
+      window.getSelection().removeAllRanges();
+      window.getSelection().addRange(range);
+      ok = document.execCommand('copy');
+      window.getSelection().removeAllRanges();
+    } catch (e2) {
+      ok = false;
+    }
+    btn.textContent = ok ? "Copied ✓" : "Copy failed — select the text manually";
+  }
+  setTimeout(() => { btn.textContent = originalLabel; }, 2000);
+}
+
+copyBtn.addEventListener('click', () => copyText(resultArea, copyBtn, 'Copy note'));
+copySummaryBtn.addEventListener('click', () => copyText(summaryArea, copySummaryBtn, 'Copy summary'));
+
+// Event delegation: re-check sign-off state whenever any code checkbox
+// changes, rather than attaching a listener per checkbox (codesArea's
+// contents get fully replaced on every run).
+codesArea.addEventListener('change', (event) => {
+  if (!event.target.classList.contains('code-check')) return;
+  const boxes = codesArea.querySelectorAll('.code-check');
+  const allChecked = Array.from(boxes).every(b => b.checked);
+  copyCodesBtn.disabled = !allChecked;
+  copyCodesBtn.textContent = allChecked ? 'Copy codes' : 'Confirm all codes to copy';
+});
+
+copyCodesBtn.addEventListener('click', () => copyText(codesArea, copyCodesBtn, 'Copy codes'));
+
+// ─── Export: download as text / print ─────────────────────────────────────────
+function buildExportText() {
+  const parts = ['ROUNDS — VISIT DOCUMENTATION', ''];
+
+  const noteEl = resultArea.querySelector('.note-output');
+  if (noteEl) {
+    parts.push('CHRONOLOGICAL NOTE', '------------------', noteEl.innerText.trim(), '');
+  }
+
+  const summaryEl = summaryArea.querySelector('.note-output');
+  if (summaryEl) {
+    parts.push('PATIENT SUMMARY', '---------------', summaryEl.innerText.trim(), '');
+  }
+
+  const codesText = codesArea.innerText.trim();
+  if (codesText) {
+    parts.push(
+      'SUGGESTED BILLING CODES (unverified — confirm before submission)',
+      '----------------------------------------------------------------',
+      codesText
+    );
+  }
+
+  return parts.join('\n');
+}
+
+downloadTxtBtn.addEventListener('click', () => {
+  const blob = new Blob([buildExportText()], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rounds-note.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+// Uses the browser's native print dialog (which offers "Save as PDF") so
+// no external PDF library or network dependency is needed. The @media
+// print stylesheet hides everything except the note/summary/codes.
+printBtn.addEventListener('click', () => window.print());
+</script>
+</body>
+</html>
