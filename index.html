@@ -77,6 +77,13 @@
     text-decoration: underline;
   }
   .download-link:hover { color: var(--pulse); }
+  .history-toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
   .header-hint {
     font-family: var(--mono);
     font-size: 11px;
@@ -462,6 +469,56 @@
     color: var(--ink-faint);
     font-style: italic;
   }
+  .history-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .history-item:last-child { border-bottom: none; }
+  .history-item-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    background: none;
+    border: none;
+    text-align: left;
+    padding: 12px 4px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .history-item-main:hover { background: var(--pulse-soft); }
+  .history-item-label {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .history-item-meta {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    flex-shrink: 0;
+  }
+  .history-delete-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    background: none;
+    border: none;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 8px 4px;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .history-delete-btn:hover { color: var(--flag); }
   textarea.manual {
     width: 100%;
     min-height: 80px;
@@ -555,6 +612,7 @@
     <div class="header-right no-print">
       <div class="tag">dictation assistant</div>
       <span class="header-hint">On iPhone: Share &#8250; Add to Home Screen</span>
+      <button class="download-link history-toggle" id="historyToggleBtn" type="button">History (0)</button>
       <a class="download-link" href="index.html" download="rounds.html">Download this app (.html)</a>
     </div>
   </header>
@@ -564,6 +622,17 @@
        here, add back the msal-browser <script> tag, and change appContent's
        default display back to none. -->
   <div id="appContent">
+  <!-- History: a local, on-this-device log of past processed dictations -->
+  <div class="stage no-print" id="historyStage" style="display:none;">
+    <div class="section-label">History</div>
+    <div class="notice no-print">
+      Every dictation you process is automatically kept here so you always have a copy — but only in this browser's local storage, on this device. It isn't backed up, isn't synced to any other device, and is erased if you clear this browser's site data. Delete individual entries or everything below whenever you want.
+    </div>
+    <div id="historyListArea"></div>
+    <div class="copy-row">
+      <button class="action secondary" id="clearHistoryBtn" type="button">Clear all history</button>
+    </div>
+  </div>
   <!-- API Key setup -->
   <div class="setup-card no-print" id="setupCard">
     <h3>Enter your Anthropic API key</h3>
@@ -745,6 +814,10 @@ const printBtn       = document.getElementById('printBtn');
 const emailToInput   = document.getElementById('emailToInput');
 const emailBtn       = document.getElementById('emailBtn');
 const emailErr       = document.getElementById('emailErr');
+const historyToggleBtn = document.getElementById('historyToggleBtn');
+const historyStage     = document.getElementById('historyStage');
+const historyListArea  = document.getElementById('historyListArea');
+const clearHistoryBtn  = document.getElementById('clearHistoryBtn');
 const visitTypeSelect     = document.getElementById('visitTypeSelect');
 const dictationLangSelect = document.getElementById('dictationLangSelect');
 // ─── Microsoft sign-in (MSAL) ──────────────────────────────────────────────────
@@ -1239,6 +1312,171 @@ function applyTranscriptGlossary(text) {
   }
   return corrected;
 }
+// ─── Result rendering ──────────────────────────────────────────────────────────
+// Shared by a fresh API response (processDictation) and by reopening a past
+// entry from History (viewHistoryEntry) — both end up with the same
+// {note, patientSummary, flags, codes} shape, so both render the same way.
+function renderResult(parsed) {
+  // Render note — contenteditable so mistakes (like the mismatched code
+  // label we found during testing) can be corrected before the note is
+  // copied, downloaded, or printed anywhere.
+  resultArea.innerHTML = '<div class="note-output" contenteditable="true" spellcheck="true">' + renderNoteText(parsed.note || '') + '</div>';
+  noteEditHint.style.display = "block";
+  // Render patient-facing summary (also editable, same reasoning as the note)
+  summaryStage.style.display = "block";
+  if (parsed.patientSummary && parsed.patientSummary.trim()) {
+    summaryArea.innerHTML = '<div class="note-output" contenteditable="true" spellcheck="true">' + escapeHtml(parsed.patientSummary.trim()) + '</div>';
+    summaryEditHint.style.display = "block";
+  } else {
+    summaryArea.innerHTML = '<div class="empty-flags">No patient summary could be generated.</div>';
+    summaryEditHint.style.display = "none";
+  }
+  // Render flags
+  if (parsed.flags && parsed.flags.length > 0) {
+    flagsArea.innerHTML = '<div class="section-label" style="margin-top:20px;">Flagged for review</div>' +
+      parsed.flags.map(f =>
+        `<div class="flag-item"><b>${escapeHtml(f.issue)}</b>${escapeHtml(f.detail)}</div>`
+      ).join("");
+  } else {
+    flagsArea.innerHTML = '<div class="section-label" style="margin-top:20px;">Flagged for review</div><div class="empty-flags">No inconsistencies detected.</div>';
+  }
+  // Render billing codes, each with its own sign-off checkbox. "Copy
+  // codes" stays disabled until every listed code has been checked off,
+  // so the "confirm before submission" disclaimer is an actual gate
+  // rather than just text someone can skim past.
+  codesStage.style.display = "block";
+  if (parsed.codes && parsed.codes.length > 0) {
+    codesArea.innerHTML = parsed.codes.map((c, i) => `
+      <div class="code-item">
+        <input type="checkbox" class="code-check" id="code-check-${i}" aria-label="Confirm this code has been reviewed">
+        <div class="code-pill${c.uncertain ? ' uncertain' : ''}">${escapeHtml(c.code)}</div>
+        <div class="code-body">
+          <div class="code-label">${escapeHtml(c.label)}</div>
+          <div class="code-rationale${c.uncertain ? ' uncertain-text' : ''}">${escapeHtml(c.rationale)}</div>
+        </div>
+      </div>`).join("");
+    copyCodesBtn.disabled = true;
+    copyCodesBtn.textContent = 'Confirm all codes to copy';
+  } else {
+    codesArea.innerHTML = '<div class="empty-flags">No billing codes could be confidently inferred from this dictation.</div>';
+    copyCodesBtn.disabled = false;
+    copyCodesBtn.textContent = 'Copy codes';
+  }
+  exportStage.style.display = "block";
+}
+// ─── History: a local, on-this-device record of past processed dictations ──────
+// Kept entirely in localStorage on this device — never transmitted anywhere.
+// Exists so a dictation isn't gone for good the moment the working transcript
+// is cleared after processing (see the end of processDictation below).
+const HISTORY_KEY = 'rounds_history';
+const HISTORY_MAX_ENTRIES = 200; // oldest entries drop off past this, so storage can't grow without bound
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+function saveHistoryEntries(entries) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(entries));
+    return true;
+  } catch (e) {
+    // Most likely the storage quota was hit. Drop the oldest half of the
+    // log and try once more rather than silently losing every future save.
+    if (entries.length > 1) {
+      const trimmed = entries.slice(0, Math.ceil(entries.length / 2));
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+        return true;
+      } catch (e2) { /* still failing — give up quietly, don't block dictation */ }
+    }
+    return false;
+  }
+}
+function addHistoryEntry(entry) {
+  const entries = loadHistory();
+  entries.unshift(entry); // newest first
+  if (entries.length > HISTORY_MAX_ENTRIES) entries.length = HISTORY_MAX_ENTRIES;
+  saveHistoryEntries(entries);
+  renderHistoryList();
+}
+function deleteHistoryEntry(id) {
+  saveHistoryEntries(loadHistory().filter(e => e.id !== id));
+  renderHistoryList();
+}
+// Looks for a "Patient Name: ..." line the way the op-report identifier
+// block (and similar templates) write it, so history entries are easier to
+// tell apart at a glance than a bare timestamp would be. Falls back to the
+// visit type when no such line is found — plenty of visit types never have one.
+function extractHistoryLabel(entry) {
+  const note = entry.parsed && entry.parsed.note;
+  if (note) {
+    const m = note.match(/^\s*patient name:\s*(.+)$/im);
+    if (m && m[1].trim()) return m[1].trim();
+  }
+  return entry.visitTypeLabel || 'Dictation';
+}
+function formatHistoryTimestamp(ms) {
+  try {
+    return new Date(ms).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+    });
+  } catch (e) {
+    return '';
+  }
+}
+function renderHistoryList() {
+  const entries = loadHistory();
+  historyToggleBtn.textContent = 'History (' + entries.length + ')';
+  if (entries.length === 0) {
+    historyListArea.innerHTML = '<div class="empty-flags">No saved dictations yet — processed dictations are automatically added here.</div>';
+    return;
+  }
+  historyListArea.innerHTML = entries.map(e => `
+    <div class="history-item">
+      <button class="history-item-main" type="button" data-id="${e.id}">
+        <span class="history-item-label">${escapeHtml(extractHistoryLabel(e))}</span>
+        <span class="history-item-meta">${escapeHtml(formatHistoryTimestamp(e.savedAt))}</span>
+      </button>
+      <button class="history-delete-btn" type="button" data-id="${e.id}" aria-label="Delete this entry">Delete</button>
+    </div>`).join('');
+}
+function viewHistoryEntry(id) {
+  const entry = loadHistory().find(e => e.id === id);
+  if (!entry || !entry.parsed) return;
+  renderResult(entry.parsed);
+  resultStage.style.display = "block";
+  resultStage.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+historyToggleBtn.addEventListener('click', () => {
+  const show = historyStage.style.display === "none";
+  historyStage.style.display = show ? "block" : "none";
+  if (show) {
+    renderHistoryList();
+    historyStage.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+});
+// Event delegation: the list is fully rebuilt on every change, so listeners
+// go on the container rather than on each row.
+historyListArea.addEventListener('click', (event) => {
+  const delBtn = event.target.closest('.history-delete-btn');
+  if (delBtn) {
+    deleteHistoryEntry(delBtn.dataset.id);
+    return;
+  }
+  const mainBtn = event.target.closest('.history-item-main');
+  if (mainBtn) viewHistoryEntry(mainBtn.dataset.id);
+});
+clearHistoryBtn.addEventListener('click', () => {
+  if (loadHistory().length === 0) return;
+  if (!confirm('Delete all saved dictation history on this device? This cannot be undone.')) return;
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistoryList();
+});
+renderHistoryList(); // set the initial "History (N)" count on page load
 // ─── Main processing function ─────────────────────────────────────────────────
 async function processDictation(rawText) {
   if (!rawText) return;
@@ -1338,52 +1576,18 @@ Empty arrays for flags and codes if none apply.`;
       codesStage.style.display = "none";
       return;
     }
-    // Render note — contenteditable so mistakes (like the mismatched code
-    // label we found during testing) can be corrected before the note is
-    // copied, downloaded, or printed anywhere.
-    resultArea.innerHTML = '<div class="note-output" contenteditable="true" spellcheck="true">' + renderNoteText(parsed.note || '') + '</div>';
-    noteEditHint.style.display = "block";
-    // Render patient-facing summary (also editable, same reasoning as the note)
-    summaryStage.style.display = "block";
-    if (parsed.patientSummary && parsed.patientSummary.trim()) {
-      summaryArea.innerHTML = '<div class="note-output" contenteditable="true" spellcheck="true">' + escapeHtml(parsed.patientSummary.trim()) + '</div>';
-      summaryEditHint.style.display = "block";
-    } else {
-      summaryArea.innerHTML = '<div class="empty-flags">No patient summary could be generated.</div>';
-      summaryEditHint.style.display = "none";
-    }
-    // Render flags
-    if (parsed.flags && parsed.flags.length > 0) {
-      flagsArea.innerHTML = '<div class="section-label" style="margin-top:20px;">Flagged for review</div>' +
-        parsed.flags.map(f =>
-          `<div class="flag-item"><b>${escapeHtml(f.issue)}</b>${escapeHtml(f.detail)}</div>`
-        ).join("");
-    } else {
-      flagsArea.innerHTML = '<div class="section-label" style="margin-top:20px;">Flagged for review</div><div class="empty-flags">No inconsistencies detected.</div>';
-    }
-    // Render billing codes, each with its own sign-off checkbox. "Copy
-    // codes" stays disabled until every listed code has been checked off,
-    // so the "confirm before submission" disclaimer is an actual gate
-    // rather than just text someone can skim past.
-    codesStage.style.display = "block";
-    if (parsed.codes && parsed.codes.length > 0) {
-      codesArea.innerHTML = parsed.codes.map((c, i) => `
-        <div class="code-item">
-          <input type="checkbox" class="code-check" id="code-check-${i}" aria-label="Confirm this code has been reviewed">
-          <div class="code-pill${c.uncertain ? ' uncertain' : ''}">${escapeHtml(c.code)}</div>
-          <div class="code-body">
-            <div class="code-label">${escapeHtml(c.label)}</div>
-            <div class="code-rationale${c.uncertain ? ' uncertain-text' : ''}">${escapeHtml(c.rationale)}</div>
-          </div>
-        </div>`).join("");
-      copyCodesBtn.disabled = true;
-      copyCodesBtn.textContent = 'Confirm all codes to copy';
-    } else {
-      codesArea.innerHTML = '<div class="empty-flags">No billing codes could be confidently inferred from this dictation.</div>';
-      copyCodesBtn.disabled = false;
-      copyCodesBtn.textContent = 'Copy codes';
-    }
-    exportStage.style.display = "block";
+    renderResult(parsed);
+    // Save a copy to the local, on-this-device history log so nothing is
+    // lost once the working transcript is cleared below. See the History
+    // section further down for storage/rendering.
+    addHistoryEntry({
+      id: 'h_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      savedAt: Date.now(),
+      visitTypeLabel: visitTypeSelect.options[visitTypeSelect.selectedIndex].text,
+      dictationLang: dictationLangSelect.value,
+      rawText: rawText,
+      parsed: parsed
+    });
     // Successful run — clear the working transcript so the next dictation
     // starts fresh instead of silently appending to (and reprocessing)
     // this visit's already-organized content. Corrections now happen
