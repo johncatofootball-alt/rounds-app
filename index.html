@@ -693,9 +693,10 @@
     </div>
     <div class="err" id="speechErr"></div>
   </div>
-  <!-- Manual text fallback -->
-  <div class="stage no-print" id="manualStage" style="display:none;">
-    <div class="section-label">No mic — type or paste instead</div>
+  <!-- Manual text entry — always available as an alternative to recording
+       or uploading, not just a fallback for when the mic fails. -->
+  <div class="stage no-print" id="manualStage">
+    <div class="section-label">Or type / paste dictation instead</div>
     <textarea class="manual" id="manualInput" placeholder="Paste or type the raw dictation here, in any order..."></textarea>
     <div class="controls-row">
       <button class="action" id="processManualBtn">Organize &amp; check dictation</button>
@@ -952,7 +953,6 @@ if (!SpeechRecognition) {
   speechSupported = false;
   recBtn.disabled = true;
   recLabel.textContent = "Mic not supported — use text entry below";
-  manualStage.style.display = "block";
   transcribeFileBtn.disabled = true;
   transcribeFileBtn.title = "Speech recognition isn't supported in this browser, so uploaded files can't be transcribed here either — use the text entry below instead.";
 } else {
@@ -994,7 +994,7 @@ if (!SpeechRecognition) {
       noSpeechStreak++;
       if (noSpeechStreak >= 4) {
         speechErr.textContent = "Not picking up any audio after several tries. Check: your system's microphone privacy settings allow Chrome, the correct input device is selected (Chrome's site settings, via the icon left of the address bar), the mic isn't muted, and no other app is currently using it.";
-        manualStage.style.display = "block";
+        manualStage.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
       return;
     }
@@ -1012,7 +1012,7 @@ if (!SpeechRecognition) {
       pauseClock();
     }
     speechErr.textContent = "Mic error: " + event.error + ". Use the text entry below if this persists.";
-    manualStage.style.display = "block";
+    manualStage.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
   // Auto-restart while still in listening mode (iOS Safari stops recognition frequently)
   recognition.onend = () => {
