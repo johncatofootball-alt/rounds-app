@@ -283,6 +283,47 @@
     margin-top: 18px;
     flex-wrap: wrap;
   }
+  .upload-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .upload-or {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+  }
+  #audioFileInput {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    max-width: 220px;
+  }
+  .email-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+  .email-row input[type="email"] {
+    font-family: var(--sans);
+    font-size: 13.5px;
+    color: var(--ink);
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--paper);
+    width: 100%;
+  }
+  .email-row input[type="email"]:focus { outline: 2px solid var(--pulse); border-color: transparent; }
+  .email-row .action { flex-shrink: 0; }
   button.action {
     font-family: var(--sans);
     font-size: 13px;
@@ -489,27 +530,16 @@
 </head>
 <body>
 <div class="wrap">
-
   <header>
     <div class="brand">Rounds<span>.</span></div>
     <div class="tag">dictation assistant</div>
   </header>
-
-  <div class="user-row no-print" id="userRow">
-    <span id="userLabel"></span>
-    <button class="key-manage-link" id="signOutBtn" type="button">Sign out</button>
-  </div>
-
-  <!-- Auth gate: nothing below this is shown until Microsoft sign-in succeeds -->
-  <div class="stage auth-gate no-print" id="authGate">
-    <div class="section-label">Sign in</div>
-    <p>Rounds requires signing in with your Microsoft account before it can be used.</p>
-    <button class="action" id="signInBtn">Sign in with Microsoft</button>
-    <div class="err" id="authError"></div>
-  </div>
-
-  <div id="appContent" style="display:none;">
-
+  <!-- Sign-in (Microsoft/MSAL) is temporarily disabled — see the commented-out
+       block near "Microsoft sign-in (MSAL)" further down in this file for how
+       to restore it: uncomment that JS block and the userRow/authGate markup
+       here, add back the msal-browser <script> tag, and change appContent's
+       default display back to none. -->
+  <div id="appContent">
   <!-- API Key setup -->
   <div class="setup-card no-print" id="setupCard">
     <h3>Enter your Anthropic API key</h3>
@@ -520,15 +550,12 @@
     </div>
     <div class="key-saved" id="keySaved" style="display:none;">&#10003; Key saved — you're ready to dictate</div>
   </div>
-
   <div class="key-manage-row no-print" id="keyManageRow">
     <button class="key-manage-link" id="changeKeyBtn" type="button">Change saved API key</button>
   </div>
-
   <div class="notice no-print">
     <b>Before you dictate:</b> transcription runs through your browser's built-in speech recognition, which sends audio to your browser vendor's servers (Google on Chrome/Android, Apple on Safari/iOS). This is fine for testing, drafts, or de-identified dictation — it is <b>not HIPAA-compliant</b> for real patient encounters without a signed BAA.
   </div>
-
   <!-- Dictation stage -->
   <div class="stage no-print">
     <div class="section-label">Dictate</div>
@@ -540,6 +567,7 @@
           <option value="new-patient">New patient visit</option>
           <option value="follow-up">Follow-up visit</option>
           <option value="procedure">Procedure</option>
+          <option value="op-report">Operative / procedure report</option>
           <option value="telehealth">Telehealth visit</option>
           <option value="annual">Annual / wellness exam</option>
         </select>
@@ -567,6 +595,15 @@
         <span class="clock" id="clock">00:00</span>
       </div>
     </div>
+    <div class="upload-row">
+      <span class="upload-or">or upload an audio file</span>
+      <input type="file" id="audioFileInput" accept="audio/*">
+      <button class="action secondary" id="transcribeFileBtn" type="button" disabled>Transcribe file</button>
+    </div>
+    <div class="notice no-print" id="uploadNotice" style="display:none;">
+      This works by playing the file out loud through your speakers while your microphone listens, using the same speech recognition as live dictation — there's no way around that without a separate server-side transcription service. Turn your volume up, keep the room quiet, and don't wear headphones (the mic needs to hear the playback). It takes as long as the recording runs, and adds onto whatever's already in the transcript below.
+    </div>
+    <audio id="audioPlayback" style="display:none;"></audio>
     <div class="transcript" id="transcript">
       <span class="placeholder">Your raw dictation will appear here as you speak, in whatever order you say it.</span>
     </div>
@@ -576,7 +613,6 @@
     </div>
     <div class="err" id="speechErr"></div>
   </div>
-
   <!-- Manual text fallback -->
   <div class="stage no-print" id="manualStage" style="display:none;">
     <div class="section-label">No mic — type or paste instead</div>
@@ -585,7 +621,6 @@
       <button class="action" id="processManualBtn">Organize &amp; check dictation</button>
     </div>
   </div>
-
   <!-- Result: organized note -->
   <div class="stage" id="resultStage" style="display:none;">
     <div class="section-label">Chronological note</div>
@@ -596,7 +631,6 @@
       <button class="action secondary" id="copyBtn">Copy note</button>
     </div>
   </div>
-
   <!-- Result: patient-facing summary -->
   <div class="stage" id="summaryStage" style="display:none;">
     <div class="section-label">Patient after-visit summary</div>
@@ -606,7 +640,6 @@
       <button class="action secondary" id="copySummaryBtn">Copy summary</button>
     </div>
   </div>
-
   <!-- Result: billing codes -->
   <div class="stage" id="codesStage" style="display:none;">
     <div class="section-label">Suggested billing codes</div>
@@ -616,7 +649,6 @@
       <button class="action secondary" id="copyCodesBtn" disabled>Copy codes</button>
     </div>
   </div>
-
   <!-- Export -->
   <div class="stage no-print" id="exportStage" style="display:none;">
     <div class="section-label">Export</div>
@@ -624,12 +656,23 @@
       <button class="action secondary" id="downloadTxtBtn">Download as text (.txt)</button>
       <button class="action secondary" id="printBtn">Print / Save as PDF</button>
     </div>
+    <div class="email-row">
+      <label class="opt-field" style="flex:1; min-width:220px;">
+        <span>Email this to</span>
+        <input type="email" id="emailToInput" placeholder="name@example.com" autocomplete="off" spellcheck="false">
+      </label>
+      <button class="action secondary" id="emailBtn" type="button">Email note</button>
+    </div>
+    <div class="notice no-print">
+      This opens a draft in your own email app with the note, summary, and billing codes already filled in — nothing is sent automatically, no email service or extra API key is involved, and nothing leaves your browser unless you hit send yourself. Regular email isn't encrypted end-to-end, so treat this like the speech-recognition note above: fine for de-identified or test content, not for real patient data without your organization's approved secure-messaging process. Very long notes may get cut off by some mail apps — use the download/print buttons above for the complete version if that happens.
+    </div>
+    <div class="err" id="emailErr"></div>
   </div>
-
   </div><!-- /#appContent -->
-
 </div>
-<script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js" integrity="sha384-PARf28kmic36Ve+O3DnUerRXFtOQ7ZDqRDGpLcbljly5/N39T2OV3kt3QsWOKeAX" crossorigin="anonymous"></script>
+<!-- msal-browser <script> tag removed along with sign-in below — re-add
+     https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js here if
+     sign-in is restored. -->
 <script>
 // ─── State ────────────────────────────────────────────────────────────────────
 let recognition = null;
@@ -640,7 +683,8 @@ let sessionStart = null; // start time of current active session
 let clockInterval = null;
 let speechSupported = true;
 let noSpeechStreak = 0; // consecutive "no-speech" errors with no result in between
-
+let transcribingFile = false; // true while an uploaded audio file is being played+transcribed
+let uploadedAudioURL = null;  // object URL for the currently-selected file, revoked on change/clear
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 const setupCard      = document.getElementById('setupCard');
 const apiKeyInput    = document.getElementById('apiKeyInput');
@@ -658,6 +702,10 @@ const speechErr      = document.getElementById('speechErr');
 const manualStage    = document.getElementById('manualStage');
 const manualInput    = document.getElementById('manualInput');
 const processManualBtn = document.getElementById('processManualBtn');
+const audioFileInput   = document.getElementById('audioFileInput');
+const transcribeFileBtn = document.getElementById('transcribeFileBtn');
+const uploadNotice     = document.getElementById('uploadNotice');
+const audioPlayback    = document.getElementById('audioPlayback');
 const resultStage    = document.getElementById('resultStage');
 const resultArea     = document.getElementById('resultArea');
 const noteEditHint   = document.getElementById('noteEditHint');
@@ -673,21 +721,28 @@ const copyCodesBtn   = document.getElementById('copyCodesBtn');
 const exportStage    = document.getElementById('exportStage');
 const downloadTxtBtn = document.getElementById('downloadTxtBtn');
 const printBtn       = document.getElementById('printBtn');
+const emailToInput   = document.getElementById('emailToInput');
+const emailBtn       = document.getElementById('emailBtn');
+const emailErr       = document.getElementById('emailErr');
 const visitTypeSelect     = document.getElementById('visitTypeSelect');
 const dictationLangSelect = document.getElementById('dictationLangSelect');
-
 // ─── Microsoft sign-in (MSAL) ──────────────────────────────────────────────────
+// TEMPORARILY DISABLED. The whole block is preserved below as a comment so
+// it can be restored later — to bring it back: uncomment this block, restore
+// the userRow/authGate markup and the msal-browser <script> tag (see the
+// comments left in their place near the top of the HTML), and change
+// appContent's default display back to none.
+const appContent = document.getElementById('appContent');
+/*
 // Gates the entire app behind a Microsoft Entra ID sign-in. #authGate and
 // #appContent are toggled based on auth state; nothing under #appContent
 // is reachable until MSAL confirms a signed-in account.
 const authGate   = document.getElementById('authGate');
-const appContent = document.getElementById('appContent');
 const signInBtn  = document.getElementById('signInBtn');
 const authError  = document.getElementById('authError');
 const userRow    = document.getElementById('userRow');
 const userLabel  = document.getElementById('userLabel');
 const signOutBtn = document.getElementById('signOutBtn');
-
 const msalConfig = {
   auth: {
     clientId: "35067c24-0660-47a8-900f-ebbc441fec20",
@@ -715,7 +770,6 @@ const msalConfig = {
     storeAuthStateInCookie: false
   }
 };
-
 // If the MSAL script tag above fails to load for any reason (network
 // policy blocking the CDN, an ad/privacy blocker, a transient outage),
 // `msal` never gets defined. The app should stay locked either way — it
@@ -732,32 +786,26 @@ if (typeof msal === "undefined") {
   signInBtn.disabled = true;
   throw new Error("msal-browser failed to load — aborting further script execution.");
 }
-
 const msalInstance = new msal.PublicClientApplication(msalConfig);
-
 function showApp(account) {
   authGate.style.display = "none";
   appContent.style.display = "block";
   userRow.style.display = "flex";
   userLabel.textContent = "Signed in as " + (account.username || account.name || "");
 }
-
 function showSignIn(errorMsg) {
   appContent.style.display = "none";
   userRow.style.display = "none";
   authGate.style.display = "block";
   authError.textContent = errorMsg || "";
 }
-
 signInBtn.addEventListener('click', () => {
   authError.textContent = "";
   msalInstance.loginRedirect({ scopes: ["User.Read"] });
 });
-
 signOutBtn.addEventListener('click', () => {
   msalInstance.logoutRedirect();
 });
-
 (async function initAuth() {
   try {
     const response = await msalInstance.handleRedirectPromise();
@@ -781,12 +829,11 @@ signOutBtn.addEventListener('click', () => {
     showSignIn("Sign-in error: " + err.message);
   }
 })();
-
+*/
 // ─── API key persistence ──────────────────────────────────────────────────────
 function getApiKey() {
   return localStorage.getItem('rounds_api_key') || '';
 }
-
 (function initKey() {
   const saved = getApiKey();
   if (saved) {
@@ -795,7 +842,6 @@ function getApiKey() {
     keyManageRow.style.display = 'flex';
   }
 })();
-
 saveKeyBtn.addEventListener('click', () => {
   const key = apiKeyInput.value.trim();
   if (!key.startsWith('sk-')) {
@@ -811,7 +857,6 @@ saveKeyBtn.addEventListener('click', () => {
     saveKeyBtn.textContent = 'Save key';
   }, 800);
 });
-
 // Lets someone re-open the setup card to swap in a new key (e.g. after
 // revoking/rotating it) without having to clear localStorage by hand.
 changeKeyBtn.addEventListener('click', () => {
@@ -820,29 +865,27 @@ changeKeyBtn.addEventListener('click', () => {
   apiKeyInput.focus();
   setupCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
-
 // ─── Speech recognition setup ─────────────────────────────────────────────────
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
 if (!SpeechRecognition) {
   speechSupported = false;
   recBtn.disabled = true;
   recLabel.textContent = "Mic not supported — use text entry below";
   manualStage.style.display = "block";
+  transcribeFileBtn.disabled = true;
+  transcribeFileBtn.title = "Speech recognition isn't supported in this browser, so uploaded files can't be transcribed here either — use the text entry below instead.";
 } else {
   recognition = new SpeechRecognition();
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.lang = dictationLangSelect.value;
   recognition.maxAlternatives = 1;
-
   // Changing the language mid-recording only takes effect on the next
   // start, since the underlying recognition session doesn't support
   // switching languages while live.
   dictationLangSelect.addEventListener('change', () => {
     recognition.lang = dictationLangSelect.value;
   });
-
   recognition.onresult = (event) => {
     noSpeechStreak = 0; // getting any result at all proves audio is reaching the recognizer
     let interim = "";
@@ -856,7 +899,6 @@ if (!SpeechRecognition) {
     }
     renderTranscript(interim);
   };
-
   recognition.onerror = (event) => {
     // "no-speech" fires constantly on iOS during normal pauses, which is
     // why it's not normally surfaced. But if it's ALL we ever get — never
@@ -876,7 +918,6 @@ if (!SpeechRecognition) {
       return;
     }
     if (event.error === 'aborted') return;
-
     // These are not recoverable by just restarting recognition (permission
     // denied, no mic, blocked service, or the network to the recognition
     // service is down). Without this, onend below would keep calling
@@ -889,11 +930,9 @@ if (!SpeechRecognition) {
       recLabel.textContent = "Tap to start dictating";
       pauseClock();
     }
-
     speechErr.textContent = "Mic error: " + event.error + ". Use the text entry below if this persists.";
     manualStage.style.display = "block";
   };
-
   // Auto-restart while still in listening mode (iOS Safari stops recognition frequently)
   recognition.onend = () => {
     if (listening) {
@@ -901,7 +940,6 @@ if (!SpeechRecognition) {
     }
   };
 }
-
 // ─── Transcript rendering ─────────────────────────────────────────────────────
 function renderTranscript(interim) {
   if (!finalTranscript && !interim) {
@@ -914,13 +952,11 @@ function renderTranscript(interim) {
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
   processBtn.disabled = finalTranscript.trim().length === 0;
 }
-
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
 }
-
 // The model returns the note as plain text with section headers on their
 // own line (e.g. "Chief Complaint:", "History of Present Illness:") per
 // the system prompt. Rendered as one flat block, that reads like an
@@ -939,7 +975,6 @@ function renderNoteText(note) {
     return escapeHtml(line);
   }).join('\n');
 }
-
 // ─── Clock (accumulates across pause/resume) ──────────────────────────────────
 function formatClock(ms) {
   const totalSec = Math.floor(ms / 1000);
@@ -947,14 +982,12 @@ function formatClock(ms) {
   const s = String(totalSec % 60).padStart(2, '0');
   return m + ":" + s;
 }
-
 function startClock() {
   sessionStart = Date.now();
   clockInterval = setInterval(() => {
     clockEl.textContent = formatClock(accumulatedMs + (Date.now() - sessionStart));
   }, 250);
 }
-
 function pauseClock() {
   if (sessionStart !== null) {
     accumulatedMs += Date.now() - sessionStart;
@@ -962,18 +995,15 @@ function pauseClock() {
   }
   clearInterval(clockInterval);
 }
-
 function resetClock() {
   clearInterval(clockInterval);
   accumulatedMs = 0;
   sessionStart = null;
   clockEl.textContent = "00:00";
 }
-
 // ─── Record button ────────────────────────────────────────────────────────────
 recBtn.addEventListener('click', () => {
-  if (!speechSupported) return;
-
+  if (!speechSupported || transcribingFile) return;
   if (!listening) {
     listening = true;
     speechErr.textContent = "";
@@ -992,11 +1022,89 @@ recBtn.addEventListener('click', () => {
     pauseClock();
   }
 });
-
+// ─── Audio file upload ────────────────────────────────────────────────────────
+// Claude's API has no audio-input endpoint, and there's no bundled
+// transcription service here — this app only ever had the browser's own
+// speech recognizer to work with. So an uploaded file is transcribed the
+// only way that's actually possible client-side with zero extra services or
+// API keys: play it out loud and let the same live-dictation recognizer
+// (SpeechRecognition, above) listen to the playback exactly as if it were
+// a person talking into the mic. That's why it needs speakers on and a
+// quiet room rather than headphones — the microphone has to physically
+// hear it.
+audioFileInput.addEventListener('change', () => {
+  const file = audioFileInput.files[0];
+  speechErr.textContent = "";
+  if (uploadedAudioURL) {
+    URL.revokeObjectURL(uploadedAudioURL);
+    uploadedAudioURL = null;
+  }
+  if (!file) {
+    transcribeFileBtn.disabled = true;
+    uploadNotice.style.display = "none";
+    return;
+  }
+  if (!file.type.startsWith('audio/')) {
+    speechErr.textContent = "That doesn't look like an audio file — please choose an audio recording (e.g. .m4a, .mp3, .wav, .ogg).";
+    transcribeFileBtn.disabled = true;
+    uploadNotice.style.display = "none";
+    audioFileInput.value = "";
+    return;
+  }
+  uploadedAudioURL = URL.createObjectURL(file);
+  audioPlayback.src = uploadedAudioURL;
+  transcribeFileBtn.disabled = !speechSupported;
+  uploadNotice.style.display = "block";
+});
+transcribeFileBtn.addEventListener('click', () => {
+  if (!speechSupported || listening || transcribingFile || !audioPlayback.src) return;
+  transcribingFile = true;
+  listening = true;
+  speechErr.textContent = "";
+  noSpeechStreak = 0;
+  try { recognition.start(); } catch(e) {}
+  recBtn.disabled = true;
+  recBtn.classList.add('live');
+  transcribeFileBtn.disabled = true;
+  audioFileInput.disabled = true;
+  transcribeFileBtn.textContent = "Transcribing…";
+  recLabel.textContent = "Transcribing uploaded file — playing through your speakers";
+  startClock();
+  audioPlayback.currentTime = 0;
+  audioPlayback.play().catch(err => {
+    speechErr.textContent = "Couldn't start playback automatically (" + err.message + "). Click \"Transcribe file\" again — browsers sometimes need a second direct click before they'll allow audio playback.";
+    stopFileTranscription();
+  });
+});
+audioPlayback.addEventListener('ended', () => {
+  if (transcribingFile) stopFileTranscription();
+});
+audioPlayback.addEventListener('error', () => {
+  if (transcribingFile) {
+    speechErr.textContent = "Playback of that file failed partway through, so transcription stopped early. Whatever was captured before the error is still in the transcript below — you can re-upload and try again, or fill in the rest manually.";
+    stopFileTranscription();
+  }
+});
+function stopFileTranscription() {
+  transcribingFile = false;
+  listening = false;
+  try { recognition.stop(); } catch(e) {}
+  try { audioPlayback.pause(); } catch(e) {}
+  recBtn.disabled = !speechSupported;
+  recBtn.classList.remove('live');
+  recBtn.setAttribute('aria-label', 'Start recording');
+  audioFileInput.disabled = false;
+  transcribeFileBtn.disabled = !speechSupported || !audioPlayback.src;
+  transcribeFileBtn.textContent = "Transcribe file";
+  recLabel.textContent = finalTranscript.trim() ? "Tap to resume dictating" : "Tap to start dictating";
+  pauseClock();
+}
 // ─── Clear ────────────────────────────────────────────────────────────────────
 clearBtn.addEventListener('click', () => {
-  // Stop recording if active
-  if (listening) {
+  // Stop recording or file transcription if active
+  if (transcribingFile) {
+    stopFileTranscription();
+  } else if (listening) {
     listening = false;
     try { recognition.stop(); } catch(e) {}
     recBtn.classList.remove('live');
@@ -1012,12 +1120,21 @@ clearBtn.addEventListener('click', () => {
   exportStage.style.display = "none";
   flagsArea.innerHTML = "";
   speechErr.textContent = "";
+  if (uploadedAudioURL) {
+    URL.revokeObjectURL(uploadedAudioURL);
+    uploadedAudioURL = null;
+  }
+  audioPlayback.removeAttribute('src');
+  audioFileInput.value = "";
+  transcribeFileBtn.disabled = true;
+  uploadNotice.style.display = "none";
 });
-
 // ─── Process buttons ──────────────────────────────────────────────────────────
 processBtn.addEventListener('click', () => {
-  // Stop recording before processing
-  if (listening) {
+  // Stop recording or file transcription before processing
+  if (transcribingFile) {
+    stopFileTranscription();
+  } else if (listening) {
     listening = false;
     try { recognition.stop(); } catch(e) {}
     recBtn.classList.remove('live');
@@ -1027,12 +1144,10 @@ processBtn.addEventListener('click', () => {
   }
   processDictation(finalTranscript.trim());
 });
-
 processManualBtn.addEventListener('click', () => {
   const text = manualInput.value.trim();
   if (text) processDictation(text);
 });
-
 // ─── Visit-type prompt guidance ────────────────────────────────────────────────
 // Extra instructions folded into the system prompt based on the selected
 // visit type, so the note/coding emphasis matches the kind of encounter
@@ -1042,14 +1157,71 @@ const VISIT_TYPE_GUIDANCE = {
   'new-patient': 'Additional context: this is a NEW PATIENT visit. Include a full Past Medical/Surgical History, Medications, Allergies, and Social History if any of that was dictated, and only suggest new-patient E/M codes (99202-99205) if the depth of history, exam, and medical decision-making actually supports that level.',
   'follow-up': 'Additional context: this is a FOLLOW-UP visit for an established patient. Emphasize interval history (what has changed since the last visit) and response to prior treatment over a full past history, and use established-patient E/M codes (99212-99215) rather than new-patient codes.',
   'procedure': 'Additional context: this encounter includes a PROCEDURE. Pay close attention to any procedure or service explicitly described and suggest the relevant CPT procedure code(s) in addition to any separately documented E/M code, and note that modifier -25 may apply if a significant, separately identifiable E/M service was also documented on the same day.',
+  'op-report': 'Additional context: this is a formal OPERATIVE / INTERVENTIONAL PROCEDURE REPORT (e.g. interventional radiology, endovascular, or surgical procedure) — NOT a routine office visit. Ignore the standard outpatient section list in instruction 1 above entirely. Instead, build the "note" using exactly these section headers, each on its own line in ALL CAPS ending with a colon, in this order, and ALWAYS include every one of these headers, in this exact order, even when nothing was dictated for a given one — never invent a value for one that was not actually stated, but do NOT omit the header itself for that reason: write the single line "Not provided" under that header (followed by an empty line before the next header) so the finished report shows the complete standard structure with the gap explicitly marked as checked-but-missing, rather than silently disappearing a field: PATIENT NAME:, DATE OF BIRTH:, MEDICAL RECORD NUMBER:, DATE OF SERVICE:, PERFORMING PHYSICIAN:, HISTORY:, PREOPERATIVE DIAGNOSIS:, POSTOPERATIVE DIAGNOSIS:, ALLERGIES:, HOME ANTITHROMBOTIC MEDICATIONS:, PROCEDURES PERFORMED:, FLUOROSCOPY TIME:, FLUOROSCOPY DOSE:, CONTRAST:, MEDICATIONS ADMINISTERED IV:, LASER TREATMENT TIME:, LASER ENERGY:, ESTIMATED BLOOD LOSS:, COMPLICATIONS:, DESCRIPTION OF PROCEDURE:, FINDINGS:, IMPRESSION:. A header marked "Not provided" should still get its own flags entry noting it needs to be filled in — marking it "Not provided" in the note and flagging it are complementary, not alternatives. EXCEPTION to the header formatting above: the first five items — PATIENT NAME, DATE OF BIRTH, MEDICAL RECORD NUMBER, DATE OF SERVICE, PERFORMING PHYSICIAN — are an identifier block, not full sections, and should NOT each get their own standalone header line. Instead, write all five together at the very top as compact "Label: value" lines, one right after another with no blank line between them (e.g. "Patient Name: Thomas Co" then, on the next line, "Date of Birth: 07/07/1947", then "Medical Record Number: ...", then "Date of Service: ...", then "Performing Physician: ...", and so on), using normal title case for each label rather than ALL CAPS. PERFORMING PHYSICIAN should name the proceduralist/operating physician if the dictation identifies one, following the same "Not provided" convention if it does not. Only start using the standalone ALL-CAPS header-on-its-own-line format (as described above) beginning with HISTORY: and for every section after it. HISTORY should be a brief clinical narrative (a few sentences) stating the reason the patient presented and relevant background (e.g. underlying diagnoses, dialysis status, wound status) drawn only from what was actually dictated. ALLERGIES should state any allergies mentioned, or "No known allergies" if the dictation affirmatively says the patient has none — that is a captured answer, not a gap, so do not write "Not provided" in that case. HOME ANTITHROMBOTIC MEDICATIONS should list home blood-thinner/antiplatelet medications mentioned (e.g. aspirin, Plavix, Xarelto) as their own section, separate from the diagnosis paragraphs, following the same "Not provided" convention if none were dictated. Under PROCEDURES PERFORMED and IMPRESSION, write a numbered list (1., 2., 3., one item per line). Under DESCRIPTION OF PROCEDURE, ALWAYS begin with this exact standard opening, verbatim, as its own sentence(s), regardless of whether the dictation explicitly mentions consent or a timeout: "After informed consent was obtained, the patient was brought to the procedure suite and positioned supine. A procedural timeout was performed by the nursing team." Immediately follow that fixed opening with a formal narrative paragraph (or a few paragraphs) describing everything else that was done, strictly in the chronological order it actually happened — access, diagnostic angiography, each intervention in the order it was actually performed, then closure — in the dictated, third-person operative-note register a proceduralist would use for the permanent record — not the casual tone of the raw dictation. Do not state the same fact more than once in DESCRIPTION OF PROCEDURE: each finding, decision, or device detail belongs a single time, at the point in the story where it actually happened or was decided. In particular, if a vessel\'s disease is noted on the initial diagnostic angiogram and a decision is made at that point to defer or not treat it, state that finding and the deferral decision together in that one place — do not circle back and re-describe the same vessel\'s disease again later when wrapping up. A closing sentence on the overall result (e.g. improved perfusion on final angiography) is fine, but it should summarize, not restate findings already given earlier in the paragraph. FINDINGS should be a systematic anatomic run-down of the vascular territory examined, proceeding proximal to distal through each named vessel/segment (e.g. common femoral, superficial femoral, popliteal, then the tibial/pedal vessels), stating patency and disease burden for each — not just a brief summary limited to the treated segments; IMPRESSION should be the numbered clinical takeaway list. DESCRIPTION OF PROCEDURE should include the technical detail an interventionalist would document for the permanent record: access technique, wire/catheter crossing of each lesion, confirmation of position, and the pre- and post-treatment result for each vessel, in the order treated. CRITICAL — the note itself (every section from PATIENT NAME through IMPRESSION) must read as a complete, finished, professional operative report that a physician could sign as-is: NEVER include meta-commentary about the source recording anywhere in the note body — no phrases like "not stated in the dictation," "unclear in the recording," "per the dictation," "as heard," "the recording does not specify," or anything similar. When a detail is missing, ambiguous, or uncertain: if a confident, reasonable clinical reading is available from context, state it plainly with no hedging; otherwise, simply leave that detail out of the note body entirely (no placeholder, no comment, no reference to the gap) and raise it as its own entry in the flags array instead, with the full explanation living there. The flags section is the ONLY place uncertainty or any reference to what the dictation did or didn\'t capture belongs — the note body itself should never point back at its own source material. Relatedly, do not name a specific device, technique, brand, or technology in the note body unless the dictation reasonably clearly supports it — if a device/technique mention is genuinely ambiguous or only loosely implied, leave it out of the note body and describe only what is clearly supported (e.g. "treated with atherectomy and stent placement" rather than guessing at a specific device that was only vaguely alluded to), raising the ambiguity itself as a flag if it seems worth the physician\'s attention. This caution is reserved for genuinely ambiguous or contradictory fragments — it is not a license to strip out specific, clearly-stated details just because they are specific: if the dictation clearly states a brand name, size, measurement, or a planned device for a staged future procedure (e.g. the closure device used at the access site, or the exact stent size intended for a later staged treatment), include it confidently in the note body exactly as stated, rather than defaulting to vaguer language or pushing it into flags. Still apply instructions 2, 3, 4, 5, and 6 above (preserve clinical content faithfully, flag real contradictions, suggest codes, write the patient summary, translate to English) — only instruction 1\'s section list is replaced by this template. For billing codes specifically (instruction 4), go through EVERY line of PROCEDURES PERFORMED individually rather than only coding the primary/headline intervention — interventional and endovascular cases routinely include separately identifiable billable components beyond the main revascularization, most commonly: intravascular ultrasound (IVUS) of a vessel (e.g. CPT 37252 for the initial non-coronary vessel studied, 37253 for each additional vessel); ultrasound guidance for vascular access, but ONLY if a permanent image was documented as obtained/saved, which is a billing requirement for that code (e.g. CPT 76937); and diagnostic runoff/extremity angiography (e.g. from the 73706/75710 family) if it reads as a distinct diagnostic study rather than purely road-mapping for the intervention that followed. Mark each of these uncertain and note that same-session bundling rules (whether a given component is separately payable alongside the primary intervention that day) are payer- and NCCI-edit-dependent and must be confirmed by a certified coder. Conversely, do NOT invent a separate code for things that are essentially always bundled into the primary intervention code and not separately billable — a vascular closure device, or fluoroscopic road-mapping/guidance used during the intervention itself — and say so explicitly (e.g. "no separate code — bundled into the intervention") rather than silently omitting them, so the reviewing physician can see that was a deliberate call, not an oversight.',
   'telehealth': 'Additional context: this was a TELEHEALTH visit. Do not infer or invent any physical exam findings that require in-person contact unless they were explicitly dictated, and flag if it is unclear whether this was an audio-only or video visit, since that can affect which E/M code applies.',
   'annual': 'Additional context: this is an ANNUAL/WELLNESS exam. Look for preventive medicine CPT codes (e.g. 99381-99397) in addition to any problem-focused codes for separate issues addressed during the same visit.'
 };
-
+// ─── Transcript glossary ───────────────────────────────────────────────────
+// The browser's built-in speech recognition is a general-purpose engine — it
+// has no idea "Supera," "Celt ACD," or "Bactrim" are real terms, so it
+// defaults to whatever generic word sounds closest. Rather than relying on
+// the model to silently guess the same correction every time, we run a
+// deterministic find-and-replace on the raw transcript first, so the model
+// sees the corrected term and the correction is consistent and auditable.
+// This list is meant to grow — add a pattern here as soon as you notice a
+// recurring mishearing, rather than letting the model re-guess it each time.
+// Order matters: multi-word phrases are listed before single words so a
+// phrase match happens before a shorter, looser match could interfere.
+const TRANSCRIPT_GLOSSARY = [
+  // Devices / brand names
+  [/\bspurs?\s+stent\b/gi, 'Supera stent'],
+  [/\bthe\s+spur\b/gi, 'the Supera'],
+  [/\bkeltamice\b/gi, 'Celt ACD'],
+  [/\bcaltevice\b/gi, 'Celt ACD'],
+  [/\bceltifice\b/gi, 'Celt ACD'],
+  // Vessels
+  [/\bcells?\s+petis\b/gi, 'dorsalis pedis'],
+  [/\bsolid\s+penis\b/gi, 'dorsalis pedis'],
+  [/\bjosallis\s+penis\b/gi, 'dorsalis pedis'],
+  [/\bdrosellus\s+pitis\b/gi, 'dorsalis pedis'],
+  [/\bentry\s+table\b/gi, 'anterior tibial'],
+  [/\bentity\s+table\b/gi, 'anterior tibial'],
+  [/\bposter\s+table\b/gi, 'posterior tibial'],
+  [/\bteal\s+artery\b/gi, 'tibial artery'],
+  [/\bpopulatile\b/gi, 'popliteal'],
+  // Techniques / metrics
+  [/\bphilosophy\s+dose\b/gi, 'fluoroscopy dose'],
+  [/\bfloral\s+time\b/gi, 'fluoroscopy time'],
+  [/\ban?thorectomy\b/gi, 'atherectomy'],
+  [/\bfatherectomy\b/gi, 'atherectomy'],
+  [/\bparaneal\b/gi, 'peroneal'],
+  [/\bantigrade\b/gi, 'antegrade'],
+  // Contrast agents
+  [/\bomnipage\b/gi, 'Omnipaque'],
+  // Medications
+  [/\bHepburn\b/gi, 'Heparin'],
+  [/\bBactrum\b/gi, 'Bactrim'],
+  [/\bZedia\b/gi, 'Zetia'],
+  [/\bZeralto\b/gi, 'Xarelto'],
+  [/\bZaralto\b/gi, 'Xarelto'],
+  [/\bAspley\b/gi, 'Aspirin'],
+  [/\bRpatha\b/gi, 'Repatha'],
+  [/\bwarparin\b/gi, 'Warfarin'],
+  [/\bFlavix\b/gi, 'Plavix'],
+  [/\bElquest\b/gi, 'Eliquis'],
+];
+function applyTranscriptGlossary(text) {
+  if (!text) return text;
+  let corrected = text;
+  for (const [pattern, replacement] of TRANSCRIPT_GLOSSARY) {
+    corrected = corrected.replace(pattern, replacement);
+  }
+  return corrected;
+}
 // ─── Main processing function ─────────────────────────────────────────────────
 async function processDictation(rawText) {
   if (!rawText) return;
-
+  rawText = applyTranscriptGlossary(rawText);
   const apiKey = getApiKey();
   if (!apiKey) {
     resultStage.style.display = "block";
@@ -1057,24 +1229,20 @@ async function processDictation(rawText) {
     resultStage.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
-
   resultStage.style.display = "block";
   codesStage.style.display = "none";
   summaryStage.style.display = "none";
   exportStage.style.display = "none";
   noteEditHint.style.display = "none";
   summaryEditHint.style.display = "none";
-  resultArea.innerHTML = '<div class="loading"><div class="spinner"></div>Organizing dictation and checking for inconsistencies…</div>';
+  resultArea.innerHTML = '<div class="loading"><div class="spinner"></div>Organizing dictation and checking for inconsistencies… longer dictations can take up to a couple of minutes.</div>';
   flagsArea.innerHTML = "";
   resultStage.scrollIntoView({ behavior: "smooth", block: "start" });
-
   const visitGuidance = VISIT_TYPE_GUIDANCE[visitTypeSelect.value] || '';
-
   const systemPrompt = `You are a clinical dictation assistant. You receive raw, possibly out-of-order, spoken dictation from a doctor and must:
-
 1. Reorganize into a clear chronological clinical narrative using standard sections (Chief Complaint, History of Present Illness, Review of Systems, Past Medical/Surgical History, Medications, Allergies, Physical Exam, Assessment, Plan) — only include sections with dictated content. Do not invent any clinical facts.
-2. Preserve all clinically meaningful information exactly as stated. Lightly clean up filler words and false starts without changing meaning.
-3. Identify internal inconsistencies: contradictory history, conflicting timelines, allergy-medication conflicts, mismatched values stated twice differently. Only flag real contradictions, not vagueness.
+2. Preserve all clinically meaningful information exactly as stated. Lightly clean up filler words and false starts without changing meaning. In particular, do not characterize an occlusion, stenosis, or lesion as "chronic" (e.g. "chronic total occlusion" / CTO) unless the dictation explicitly used that word or a clearly recognizable variant of it for that specific lesion — default to plain "occlusion" or "complex occlusion" otherwise. Chronicity is a specific clinical distinction (chronic vs. acute) that must not be assumed from severity, complexity, or difficulty-of-crossing language alone.
+3. Identify internal inconsistencies: contradictory history, conflicting timelines, allergy-medication conflicts, mismatched values stated twice differently. Only flag real contradictions, not vagueness. When the same fact (a device size, measurement, dose, count, or similar) is stated more than once with different values, and one of those statements is part of a clear closing summary or recap near the end of the dictation — where the speaker is deliberately restating case details for the record (e.g. "let's go over the numbers," "for the record," "shout out the specs," or a similar clear restatement) — treat that closing-recap value as more likely correct than an earlier value stated during the free-flowing narrative, since a closing recap is typically a careful, deliberate restatement rather than in-the-moment chatter. Use the closing-recap value in the note body, but still add a flags entry noting the earlier value differed, so the physician can confirm which is right.
 4. Suggest billing codes from the dictation only:
    - ICD-10-CM codes for each documented diagnosis or symptom
    - CPT codes for any procedures or services explicitly described
@@ -1087,14 +1255,16 @@ async function processDictation(rawText) {
 ${visitGuidance ? '\n' + visitGuidance + '\n' : ''}
 Return ONLY valid JSON with no markdown fences, no preamble:
 {"note":"full reorganized note as plain text with section headers","patientSummary":"plain-language after-visit summary written for the patient","flags":[{"issue":"brief inconsistency title","detail":"quote or paraphrase of conflicting content"}],"codes":[{"code":"ICD-10: X00.0 or CPT: 99213","label":"human-readable description","rationale":"one sentence tying to dictated content","uncertain":false}]}
-
 Empty arrays for flags and codes if none apply.`;
-
   // Abort the request if it hangs indefinitely instead of leaving the
-  // spinner running forever with no way to recover.
+  // spinner running forever with no way to recover. A full clinical note
+  // (chief complaint through plan, plus flags and billing codes, up to
+  // 4096 output tokens) can legitimately take Claude over a minute to
+  // generate for a long dictation — 45s was cutting those off before they
+  // finished rather than catching a genuinely stuck request. 120s still
+  // gives up eventually, but no longer punishes long, detailed visits.
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 45000);
-
+  const timeoutId = setTimeout(() => controller.abort(), 120000);
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -1113,7 +1283,6 @@ Empty arrays for flags and codes if none apply.`;
       signal: controller.signal
     });
     clearTimeout(timeoutId);
-
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
       const msg = errData?.error?.message || response.statusText || "Unknown error";
@@ -1124,15 +1293,12 @@ Empty arrays for flags and codes if none apply.`;
       }
       return;
     }
-
     const data = await response.json();
     const textBlock = data.content && data.content.find(b => b.type === "text");
-
     if (!textBlock || !textBlock.text) {
       resultArea.innerHTML = '<div class="err">Received an empty response from the API. Please try again.</div>';
       return;
     }
-
     let parsed;
     try {
       const cleaned = textBlock.text.replace(/```json|```/g, "").trim();
@@ -1151,13 +1317,11 @@ Empty arrays for flags and codes if none apply.`;
       codesStage.style.display = "none";
       return;
     }
-
     // Render note — contenteditable so mistakes (like the mismatched code
     // label we found during testing) can be corrected before the note is
     // copied, downloaded, or printed anywhere.
     resultArea.innerHTML = '<div class="note-output" contenteditable="true" spellcheck="true">' + renderNoteText(parsed.note || '') + '</div>';
     noteEditHint.style.display = "block";
-
     // Render patient-facing summary (also editable, same reasoning as the note)
     summaryStage.style.display = "block";
     if (parsed.patientSummary && parsed.patientSummary.trim()) {
@@ -1167,7 +1331,6 @@ Empty arrays for flags and codes if none apply.`;
       summaryArea.innerHTML = '<div class="empty-flags">No patient summary could be generated.</div>';
       summaryEditHint.style.display = "none";
     }
-
     // Render flags
     if (parsed.flags && parsed.flags.length > 0) {
       flagsArea.innerHTML = '<div class="section-label" style="margin-top:20px;">Flagged for review</div>' +
@@ -1177,7 +1340,6 @@ Empty arrays for flags and codes if none apply.`;
     } else {
       flagsArea.innerHTML = '<div class="section-label" style="margin-top:20px;">Flagged for review</div><div class="empty-flags">No inconsistencies detected.</div>';
     }
-
     // Render billing codes, each with its own sign-off checkbox. "Copy
     // codes" stays disabled until every listed code has been checked off,
     // so the "confirm before submission" disclaimer is an actual gate
@@ -1200,9 +1362,7 @@ Empty arrays for flags and codes if none apply.`;
       copyCodesBtn.disabled = false;
       copyCodesBtn.textContent = 'Copy codes';
     }
-
     exportStage.style.display = "block";
-
     // Successful run — clear the working transcript so the next dictation
     // starts fresh instead of silently appending to (and reprocessing)
     // this visit's already-organized content. Corrections now happen
@@ -1213,17 +1373,15 @@ Empty arrays for flags and codes if none apply.`;
     recLabel.textContent = "Tap to start dictating";
     recBtn.setAttribute('aria-label', 'Start recording');
     manualInput.value = "";
-
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      resultArea.innerHTML = '<div class="err">The request took too long and timed out. Check your connection and try again.</div>';
+      resultArea.innerHTML = '<div class="err">The request took over two minutes and timed out. This usually means a very long dictation combined with a slow connection — try again, or split a long visit into two shorter dictations.</div>';
     } else {
       resultArea.innerHTML = '<div class="err">Network error — check your internet connection and try again.<br><small>' + escapeHtml(err.message) + '</small></div>';
     }
   }
 }
-
 // ─── Copy buttons ─────────────────────────────────────────────────────────────
 async function copyText(el, btn, originalLabel) {
   try {
@@ -1248,10 +1406,8 @@ async function copyText(el, btn, originalLabel) {
   }
   setTimeout(() => { btn.textContent = originalLabel; }, 2000);
 }
-
 copyBtn.addEventListener('click', () => copyText(resultArea, copyBtn, 'Copy note'));
 copySummaryBtn.addEventListener('click', () => copyText(summaryArea, copySummaryBtn, 'Copy summary'));
-
 // Event delegation: re-check sign-off state whenever any code checkbox
 // changes, rather than attaching a listener per checkbox (codesArea's
 // contents get fully replaced on every run).
@@ -1262,23 +1418,18 @@ codesArea.addEventListener('change', (event) => {
   copyCodesBtn.disabled = !allChecked;
   copyCodesBtn.textContent = allChecked ? 'Copy codes' : 'Confirm all codes to copy';
 });
-
 copyCodesBtn.addEventListener('click', () => copyText(codesArea, copyCodesBtn, 'Copy codes'));
-
 // ─── Export: download as text / print ─────────────────────────────────────────
 function buildExportText() {
   const parts = ['ROUNDS — VISIT DOCUMENTATION', ''];
-
   const noteEl = resultArea.querySelector('.note-output');
   if (noteEl) {
     parts.push('CHRONOLOGICAL NOTE', '------------------', noteEl.innerText.trim(), '');
   }
-
   const summaryEl = summaryArea.querySelector('.note-output');
   if (summaryEl) {
     parts.push('PATIENT SUMMARY', '---------------', summaryEl.innerText.trim(), '');
   }
-
   const codesText = codesArea.innerText.trim();
   if (codesText) {
     parts.push(
@@ -1287,10 +1438,8 @@ function buildExportText() {
       codesText
     );
   }
-
   return parts.join('\n');
 }
-
 downloadTxtBtn.addEventListener('click', () => {
   const blob = new Blob([buildExportText()], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
@@ -1302,11 +1451,53 @@ downloadTxtBtn.addEventListener('click', () => {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 });
-
 // Uses the browser's native print dialog (which offers "Save as PDF") so
 // no external PDF library or network dependency is needed. The @media
 // print stylesheet hides everything except the note/summary/codes.
 printBtn.addEventListener('click', () => window.print());
+// ─── Export: email via mailto: ─────────────────────────────────────────────────
+// There's no backend here and no email-sending API key — same reasoning as
+// the audio upload feature above. A mailto: link hands the fully-assembled
+// note off to the user's own email app as a draft; they review it and hit
+// send themselves, so nothing is transmitted by this page at all.
+function isValidEmail(addr) {
+  // Deliberately permissive — just enough to catch an obvious typo before
+  // handing off to the mail client, not a full RFC 5322 validator.
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr.trim());
+}
+emailBtn.addEventListener('click', () => {
+  emailErr.textContent = "";
+  const to = emailToInput.value.trim();
+  if (!to) {
+    emailErr.textContent = "Enter an email address first.";
+    emailToInput.focus();
+    return;
+  }
+  if (!isValidEmail(to)) {
+    emailErr.textContent = "That doesn't look like a valid email address.";
+    emailToInput.focus();
+    return;
+  }
+  const subject = "Rounds visit documentation";
+  let body = buildExportText();
+  // mailto: links have no formal length limit, but several mail clients
+  // (desktop Outlook in particular) silently truncate or refuse very long
+  // ones. Cap it well before that point and point back at the download/
+  // print buttons for the full version rather than handing off a draft
+  // that looks complete but got cut off.
+  const MAILTO_BODY_LIMIT = 1500;
+  if (body.length > MAILTO_BODY_LIMIT) {
+    body = body.slice(0, MAILTO_BODY_LIMIT) +
+      "\n\n[Note shortened here — it's long enough that some email apps " +
+      "would cut it off or fail to open a draft at all. Use \"Download as " +
+      "text\" or \"Print / Save as PDF\" above for the complete version.]";
+    emailErr.textContent = "The note is long, so the emailed draft was shortened — download the full version above if you need everything included.";
+  }
+  const mailtoUrl = "mailto:" + encodeURIComponent(to) +
+    "?subject=" + encodeURIComponent(subject) +
+    "&body=" + encodeURIComponent(body);
+  window.location.href = mailtoUrl;
+});
 </script>
 </body>
 </html>
