@@ -737,27 +737,8 @@
       <button class="action secondary" id="printBtn">Print / Save as PDF</button>
     </div>
     <div class="email-status no-print" id="emailStatus"></div>
-    <div class="notice no-print" id="emailAutoNotice" style="display:none;">
+    <div class="notice no-print" id="emailAutoNotice">
       Every finished note is automatically emailed to <b>johncatofootball@gmail.com</b> as soon as it's processed — no prompt, nothing to click. This uses EmailJS to relay the message straight from your browser, so the note content passes through EmailJS's servers (not a server run by this app — there isn't one). Regular email isn't encrypted end-to-end, so treat this like the speech-recognition note above: fine for de-identified or test content, not for real patient data without your organization's approved secure-messaging process.
-    </div>
-    <div class="key-manage-row no-print" id="emailjsManageRow" style="display:none;">
-      <button class="key-manage-link" id="changeEmailjsBtn" type="button">Change auto-email settings</button>
-    </div>
-    <div class="setup-card no-print" id="emailjsSetupCard">
-      <h3>Set up auto-email (one time)</h3>
-      <p>Auto-emailing needs a free EmailJS account connected to your Gmail — get one at <a href="https://www.emailjs.com" target="_blank">emailjs.com</a>. Add a Gmail email service, then a template with three variables named <b>to_email</b>, <b>subject</b>, and <b>message</b>. Paste the three IDs from your EmailJS dashboard below — this is a one-time setup per device, and after saving, every processed note auto-sends with no further clicks.</p>
-      <div class="key-row">
-        <input type="text" class="key-input" id="emailjsPublicKeyInput" placeholder="Public key (Account page)" autocomplete="off" spellcheck="false">
-      </div>
-      <div class="key-row" style="margin-top:8px;">
-        <input type="text" class="key-input" id="emailjsServiceIdInput" placeholder="Service ID (Email Services page)" autocomplete="off" spellcheck="false">
-      </div>
-      <div class="key-row" style="margin-top:8px;">
-        <input type="text" class="key-input" id="emailjsTemplateIdInput" placeholder="Template ID (Email Templates page)" autocomplete="off" spellcheck="false">
-        <button class="action" id="saveEmailjsBtn">Save</button>
-      </div>
-      <div class="key-saved" id="emailjsSaved" style="display:none;">&#10003; Saved — notes now auto-email to johncatofootball@gmail.com</div>
-      <div class="err" id="emailjsErr"></div>
     </div>
   </div>
   </div><!-- /#appContent -->
@@ -820,15 +801,6 @@ const downloadTxtBtn = document.getElementById('downloadTxtBtn');
 const printBtn       = document.getElementById('printBtn');
 const emailStatus       = document.getElementById('emailStatus');
 const emailAutoNotice   = document.getElementById('emailAutoNotice');
-const emailjsManageRow  = document.getElementById('emailjsManageRow');
-const changeEmailjsBtn  = document.getElementById('changeEmailjsBtn');
-const emailjsSetupCard  = document.getElementById('emailjsSetupCard');
-const emailjsPublicKeyInput = document.getElementById('emailjsPublicKeyInput');
-const emailjsServiceIdInput = document.getElementById('emailjsServiceIdInput');
-const emailjsTemplateIdInput = document.getElementById('emailjsTemplateIdInput');
-const saveEmailjsBtn    = document.getElementById('saveEmailjsBtn');
-const emailjsSaved      = document.getElementById('emailjsSaved');
-const emailjsErr        = document.getElementById('emailjsErr');
 const historyToggleBtn = document.getElementById('historyToggleBtn');
 const historyStage     = document.getElementById('historyStage');
 const historyListArea  = document.getElementById('historyListArea');
@@ -1702,69 +1674,32 @@ printBtn.addEventListener('click', () => window.print());
 // No backend of ours exists, so "send automatically, no prompt, from any
 // device" can only work through a third-party relay that accepts a request
 // straight from the browser — EmailJS. The user explicitly chose this route
-// (accepting that note content passes through EmailJS's servers) over the
-// zero-third-party mailto: draft this used to build, because mailto: always
-// pops open a mail app and needs a manual Send — not truly automatic.
-// Always sends to the user's own fixed address; there's no per-note
-// recipient field anymore, by design (one person, one inbox, no prompt).
+// over the zero-third-party mailto: draft this used to build, because
+// mailto: always pops open a mail app and needs a manual Send — not truly
+// automatic.
+//
+// The three IDs below are baked in (not entered per-device) so the app
+// works out of the box on every device with zero setup — that's the point
+// of "no matter where it's used." The Public Key is EmailJS's client-side
+// identifier and is meant to be embedded in browser code (same idea as a
+// Stripe publishable key); it cannot send email on its own without the
+// matching Service/Template also being configured to relay only to the
+// fixed address below on EmailJS's dashboard. Always sends to the user's
+// own fixed address — there's no per-note recipient field, by design (one
+// person, one inbox, no prompt).
+const EMAILJS_PUBLIC_KEY = 'DHJhkB8GsWOK-OQF4';
+const EMAILJS_SERVICE_ID = 'service_ffyozlf';
+const EMAILJS_TEMPLATE_ID = 'template_6guyfrs';
 const EMAILJS_TO_ADDRESS = 'johncatofootball@gmail.com';
-function getEmailjsConfig() {
-  return {
-    publicKey: localStorage.getItem('rounds_emailjs_public_key') || '',
-    serviceId: localStorage.getItem('rounds_emailjs_service_id') || '',
-    templateId: localStorage.getItem('rounds_emailjs_template_id') || ''
-  };
+if (typeof emailjs !== 'undefined') {
+  emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
 }
-function emailjsConfigured(cfg) {
-  cfg = cfg || getEmailjsConfig();
-  return !!(cfg.publicKey && cfg.serviceId && cfg.templateId);
-}
-function showEmailjsSetupUI(configured) {
-  emailjsSetupCard.style.display = configured ? 'none' : 'block';
-  emailjsManageRow.style.display = configured ? 'flex' : 'none';
-  emailAutoNotice.style.display = configured ? 'block' : 'none';
-}
-(function initEmailjs() {
-  const cfg = getEmailjsConfig();
-  if (emailjsConfigured(cfg)) {
-    emailjsPublicKeyInput.value = cfg.publicKey;
-    emailjsServiceIdInput.value = cfg.serviceId;
-    emailjsTemplateIdInput.value = cfg.templateId;
-    if (typeof emailjs !== 'undefined') emailjs.init({ publicKey: cfg.publicKey });
-    showEmailjsSetupUI(true);
-  } else {
-    showEmailjsSetupUI(false);
-  }
-})();
-saveEmailjsBtn.addEventListener('click', () => {
-  emailjsErr.textContent = '';
-  const publicKey = emailjsPublicKeyInput.value.trim();
-  const serviceId = emailjsServiceIdInput.value.trim();
-  const templateId = emailjsTemplateIdInput.value.trim();
-  if (!publicKey || !serviceId || !templateId) {
-    emailjsErr.textContent = 'Fill in all three fields — they all come from your EmailJS dashboard.';
-    return;
-  }
-  localStorage.setItem('rounds_emailjs_public_key', publicKey);
-  localStorage.setItem('rounds_emailjs_service_id', serviceId);
-  localStorage.setItem('rounds_emailjs_template_id', templateId);
-  if (typeof emailjs !== 'undefined') emailjs.init({ publicKey: publicKey });
-  emailjsSaved.style.display = 'flex';
-  setTimeout(() => { emailjsSaved.style.display = 'none'; }, 3000);
-  showEmailjsSetupUI(true);
-});
-changeEmailjsBtn.addEventListener('click', () => {
-  showEmailjsSetupUI(false);
-  emailjsPublicKeyInput.focus();
-  emailjsSetupCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-});
 // Called automatically after every successfully processed dictation — no
-// button, no prompt. Silently no-ops (with an inline nudge toward the setup
-// card) if EmailJS hasn't been configured on this device yet.
+// button, no prompt. Silently warns inline (no popup) if the EmailJS SDK
+// failed to load, e.g. no internet connection or the CDN is blocked.
 function autoEmailCopy() {
-  const cfg = getEmailjsConfig();
-  if (!emailjsConfigured(cfg) || typeof emailjs === 'undefined') {
-    emailStatus.innerHTML = '<span class="email-status-warn">Auto-email isn\'t set up on this device yet — fill in the card below to start sending a copy of every note automatically.</span>';
+  if (typeof emailjs === 'undefined') {
+    emailStatus.innerHTML = '<span class="email-status-warn">Auto-email couldn\'t load (no connection?) — the note is still saved in History above.</span>';
     return;
   }
   emailStatus.innerHTML = '<span class="email-status-pending">Emailing a copy to ' + EMAILJS_TO_ADDRESS + '…</span>';
@@ -1773,14 +1708,14 @@ function autoEmailCopy() {
     subject: 'Rounds visit documentation',
     message: buildExportText()
   };
-  emailjs.send(cfg.serviceId, cfg.templateId, templateParams).then(
+  emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams).then(
     () => {
       const stamp = new Date().toLocaleTimeString();
       emailStatus.innerHTML = '<span class="email-status-ok">&#10003; Emailed a copy to ' + EMAILJS_TO_ADDRESS + ' at ' + stamp + '</span>';
     },
     (error) => {
       const detail = (error && (error.text || error.message)) || 'unknown error';
-      emailStatus.innerHTML = '<span class="email-status-warn">Auto-email failed (' + escapeHtml(String(detail)) + ') — the note is still saved in History above; check your auto-email settings below.</span>';
+      emailStatus.innerHTML = '<span class="email-status-warn">Auto-email failed (' + escapeHtml(String(detail)) + ') — the note is still saved in History above.</span>';
     }
   );
 }
