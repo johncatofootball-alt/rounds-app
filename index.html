@@ -62,6 +62,19 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
+  .header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+  }
+  .download-link {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    text-decoration: underline;
+  }
+  .download-link:hover { color: var(--pulse); }
   .notice {
     font-size: 13px;
     line-height: 1.5;
@@ -532,7 +545,10 @@
 <div class="wrap">
   <header>
     <div class="brand">Rounds<span>.</span></div>
-    <div class="tag">dictation assistant</div>
+    <div class="header-right no-print">
+      <div class="tag">dictation assistant</div>
+      <a class="download-link" href="index.html" download="rounds.html">Download this app (.html)</a>
+    </div>
   </header>
   <!-- Sign-in (Microsoft/MSAL) is temporarily disabled — see the commented-out
        block near "Microsoft sign-in (MSAL)" further down in this file for how
@@ -552,9 +568,6 @@
   </div>
   <div class="key-manage-row no-print" id="keyManageRow">
     <button class="key-manage-link" id="changeKeyBtn" type="button">Change saved API key</button>
-  </div>
-  <div class="notice no-print">
-    <b>Before you dictate:</b> transcription runs through your browser's built-in speech recognition, which sends audio to your browser vendor's servers (Google on Chrome/Android, Apple on Safari/iOS). This is fine for testing, drafts, or de-identified dictation — it is <b>not HIPAA-compliant</b> for real patient encounters without a signed BAA.
   </div>
   <!-- Dictation stage -->
   <div class="stage no-print">
