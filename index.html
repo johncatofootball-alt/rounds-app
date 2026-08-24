@@ -332,15 +332,6 @@
     color: var(--ink-soft);
     max-width: 220px;
   }
-  .email-status {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    margin-top: 16px;
-    min-height: 1.4em;
-  }
-  .email-status-ok { color: var(--pulse); }
-  .email-status-warn { color: var(--flag); }
-  .email-status-pending { color: var(--ink-soft); }
   button.action {
     font-family: var(--sans);
     font-size: 13px;
@@ -737,7 +728,6 @@
       <button class="action secondary" id="downloadTxtBtn">Download as text (.txt)</button>
       <button class="action secondary" id="printBtn">Print / Save as PDF</button>
     </div>
-    <div class="email-status no-print" id="emailStatus"></div>
     <div class="notice no-print" id="emailAutoNotice">
       Every finished note is automatically emailed to <b>johncatofootball@gmail.com</b> as soon as it's processed — no prompt, nothing to click. This uses EmailJS to relay the message straight from your browser, so the note content passes through EmailJS's servers (not a server run by this app — there isn't one). Regular email isn't encrypted end-to-end, so treat this like the speech-recognition note above: fine for de-identified or test content, not for real patient data without your organization's approved secure-messaging process.
     </div>
@@ -801,7 +791,6 @@ const copyCodesBtn   = document.getElementById('copyCodesBtn');
 const exportStage    = document.getElementById('exportStage');
 const downloadTxtBtn = document.getElementById('downloadTxtBtn');
 const printBtn       = document.getElementById('printBtn');
-const emailStatus       = document.getElementById('emailStatus');
 const emailAutoNotice   = document.getElementById('emailAutoNotice');
 const historyToggleBtn = document.getElementById('historyToggleBtn');
 const historyStage     = document.getElementById('historyStage');
@@ -1806,27 +1795,24 @@ if (typeof emailjs !== 'undefined') {
   emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
 }
 // Called automatically after every successfully processed dictation — no
-// button, no prompt. Silently warns inline (no popup) if the EmailJS SDK
-// failed to load, e.g. no internet connection or the CDN is blocked.
+// button, no prompt, and no visible status text (kept silent so nothing
+// shown on screen references the email). Failures are only logged to the
+// console; the note itself is always still saved in History regardless.
 function autoEmailCopy() {
   if (typeof emailjs === 'undefined') {
-    emailStatus.innerHTML = '<span class="email-status-warn">Auto-email couldn\'t load (no connection?) — the note is still saved in History above.</span>';
+    console.warn('Auto-email: EmailJS SDK failed to load (no connection?).');
     return;
   }
-  emailStatus.innerHTML = '<span class="email-status-pending">Emailing a copy to ' + EMAILJS_TO_ADDRESS + '…</span>';
   const templateParams = {
     to_email: EMAILJS_TO_ADDRESS,
     subject: 'Rounds visit documentation',
     message: buildExportText()
   };
   emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams).then(
-    () => {
-      const stamp = new Date().toLocaleTimeString();
-      emailStatus.innerHTML = '<span class="email-status-ok">&#10003; Emailed a copy to ' + EMAILJS_TO_ADDRESS + ' at ' + stamp + '</span>';
-    },
+    () => {},
     (error) => {
       const detail = (error && (error.text || error.message)) || 'unknown error';
-      emailStatus.innerHTML = '<span class="email-status-warn">Auto-email failed (' + escapeHtml(String(detail)) + ') — the note is still saved in History above.</span>';
+      console.warn('Auto-email failed:', detail);
     }
   );
 }
