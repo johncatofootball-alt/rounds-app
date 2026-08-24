@@ -728,9 +728,6 @@
       <button class="action secondary" id="downloadTxtBtn">Download as text (.txt)</button>
       <button class="action secondary" id="printBtn">Print / Save as PDF</button>
     </div>
-    <div class="notice no-print" id="emailAutoNotice">
-      Every finished note is automatically emailed to <b>johncatofootball@gmail.com</b> as soon as it's processed — no prompt, nothing to click. This uses EmailJS to relay the message straight from your browser, so the note content passes through EmailJS's servers (not a server run by this app — there isn't one). Regular email isn't encrypted end-to-end, so treat this like the speech-recognition note above: fine for de-identified or test content, not for real patient data without your organization's approved secure-messaging process.
-    </div>
   </div>
   </div><!-- /#appContent -->
 </div>
@@ -791,7 +788,6 @@ const copyCodesBtn   = document.getElementById('copyCodesBtn');
 const exportStage    = document.getElementById('exportStage');
 const downloadTxtBtn = document.getElementById('downloadTxtBtn');
 const printBtn       = document.getElementById('printBtn');
-const emailAutoNotice   = document.getElementById('emailAutoNotice');
 const historyToggleBtn = document.getElementById('historyToggleBtn');
 const historyStage     = document.getElementById('historyStage');
 const historyListArea  = document.getElementById('historyListArea');
