@@ -577,6 +577,65 @@
     margin-top: 10px;
     line-height: 1.5;
   }
+  .chat-log {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 14px;
+    max-height: 420px;
+    overflow-y: auto;
+  }
+  .chat-msg {
+    max-width: 85%;
+    padding: 10px 13px;
+    border-radius: 12px;
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .chat-msg.user {
+    align-self: flex-end;
+    background: var(--pulse-soft);
+    color: var(--ink);
+    border-bottom-right-radius: 3px;
+  }
+  .chat-msg.assistant {
+    align-self: flex-start;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    border-bottom-left-radius: 3px;
+  }
+  .chat-msg.pending {
+    align-self: flex-start;
+    background: var(--paper);
+    border: 1px dashed var(--line);
+    color: var(--ink-faint);
+    font-style: italic;
+  }
+  .chat-msg.error-msg {
+    align-self: flex-start;
+    background: var(--flag-soft);
+    border: 1px solid var(--flag);
+    color: var(--flag);
+  }
+  .chat-input-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  textarea.chat-input {
+    flex: 1;
+    min-height: 44px;
+    max-height: 160px;
+  }
+  .rec-btn.small {
+    width: 40px;
+    height: 40px;
+  }
+  .rec-btn.small .dot { width: 13px; height: 13px; }
+  .rec-btn.small.live .dot { width: 12px; height: 12px; }
   @media print {
     .no-print { display: none !important; }
     .code-check { display: none !important; }
@@ -721,6 +780,25 @@
       <button class="action secondary" id="copyCodesBtn" disabled>Copy codes</button>
     </div>
   </div>
+  <!-- Conversational feedback: talk to Rounds to request edits to the note,
+       summary, flags, or codes above without re-dictating from scratch.
+       Accepts typed or spoken feedback (the mic here is a separate,
+       single-utterance recognizer from the one used for live dictation). -->
+  <div class="stage no-print" id="chatStage" style="display:none;">
+    <div class="section-label">Talk to Rounds</div>
+    <div class="notice no-print">
+      Ask for corrections or additions in plain language, typed or spoken — "change the follow-up to 3 weeks," "I didn't prescribe ibuprofen, use Tylenol instead," "add that she should avoid weight-bearing for a week." Rounds updates the note, summary, and codes above to match.
+    </div>
+    <div class="chat-log" id="chatLog"></div>
+    <div class="chat-input-row">
+      <button class="rec-btn small" id="chatMicBtn" type="button" aria-label="Speak feedback">
+        <div class="dot"></div>
+      </button>
+      <textarea class="manual chat-input" id="chatInput" placeholder="Type or tap the mic to speak your feedback..." rows="1"></textarea>
+      <button class="action" id="chatSendBtn" type="button">Send</button>
+    </div>
+    <div class="err" id="chatErr"></div>
+  </div>
   <!-- Export -->
   <div class="stage no-print" id="exportStage" style="display:none;">
     <div class="section-label">Export</div>
@@ -752,6 +830,13 @@ let noSpeechStreak = 0; // consecutive "no-speech" errors with no result in betw
 let transcribingFile = false; // true while an uploaded audio file is being played+transcribed
 let uploadedAudioURL = null;  // object URL for the currently-selected file, revoked on change/clear
 let wakeLock = null;          // Screen Wake Lock held while recording/transcribing — see acquireWakeLock()
+// State for the "Talk to Rounds" conversational feedback feature — see the
+// callClaudeStreaming/sendChatFeedback section further down.
+let currentParsed = null;        // the note/summary/flags/codes currently on screen
+let currentRawDictation = "";    // the raw dictation the current note was built from
+let currentHistoryId = null;     // id of this note's entry in local History, so edits update it in place
+let chatFeedbackLog = [];        // plain-text log of the doctor's own feedback asks this session (context for the model, not re-sent as full JSON each time)
+let chatSending = false;
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 const setupCard      = document.getElementById('setupCard');
 const apiKeyInput    = document.getElementById('apiKeyInput');
@@ -785,6 +870,12 @@ const copySummaryBtn = document.getElementById('copySummaryBtn');
 const codesStage     = document.getElementById('codesStage');
 const codesArea      = document.getElementById('codesArea');
 const copyCodesBtn   = document.getElementById('copyCodesBtn');
+const chatStage      = document.getElementById('chatStage');
+const chatLog        = document.getElementById('chatLog');
+const chatInput      = document.getElementById('chatInput');
+const chatSendBtn    = document.getElementById('chatSendBtn');
+const chatMicBtn     = document.getElementById('chatMicBtn');
+const chatErr        = document.getElementById('chatErr');
 const exportStage    = document.getElementById('exportStage');
 const downloadTxtBtn = document.getElementById('downloadTxtBtn');
 const printBtn       = document.getElementById('printBtn');
@@ -1008,6 +1099,60 @@ if (!SpeechRecognition) {
     }
   };
 }
+// ─── Chat feedback mic ─────────────────────────────────────────────────────────
+// A separate, single-utterance recognizer for the "Talk to Rounds" feedback
+// box further down — deliberately not the same instance as the continuous
+// dictation recognizer above, since a feedback message is a short ask, not a
+// marathon recording: it can just stop itself after a pause in speech rather
+// than needing pause/resume handling or a running clock.
+let chatRecognition = null;
+let chatListening = false;
+let chatBaseText = ""; // text already in the box when this listening session started, so speaking appends rather than replaces
+if (SpeechRecognition) {
+  chatRecognition = new SpeechRecognition();
+  chatRecognition.continuous = false;
+  chatRecognition.interimResults = true;
+  chatRecognition.maxAlternatives = 1;
+  chatRecognition.onresult = (event) => {
+    let finalPiece = "";
+    let interim = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const piece = event.results[i][0].transcript;
+      if (event.results[i].isFinal) finalPiece += piece + " ";
+      else interim += piece;
+    }
+    if (finalPiece) chatBaseText = (chatBaseText + " " + finalPiece).trim() + " ";
+    chatInput.value = (chatBaseText + interim).trim();
+  };
+  chatRecognition.onend = () => {
+    chatListening = false;
+    chatMicBtn.classList.remove('live');
+    chatMicBtn.setAttribute('aria-label', 'Speak feedback');
+  };
+  chatRecognition.onerror = (event) => {
+    if (event.error === 'no-speech' || event.error === 'aborted') return;
+    chatErr.textContent = "Mic error: " + event.error + ". Type your feedback instead.";
+  };
+} else {
+  chatMicBtn.disabled = true;
+  chatMicBtn.title = "Speech recognition isn't supported in this browser — type your feedback instead.";
+}
+chatMicBtn.addEventListener('click', () => {
+  if (!chatRecognition || chatSending) return;
+  if (!chatListening) {
+    chatListening = true;
+    chatBaseText = chatInput.value.trim();
+    chatRecognition.lang = dictationLangSelect.value;
+    try { chatRecognition.start(); } catch (e) {}
+    chatMicBtn.classList.add('live');
+    chatMicBtn.setAttribute('aria-label', 'Stop speaking');
+  } else {
+    chatListening = false;
+    try { chatRecognition.stop(); } catch (e) {}
+    chatMicBtn.classList.remove('live');
+    chatMicBtn.setAttribute('aria-label', 'Speak feedback');
+  }
+});
 // ─── Transcript rendering ─────────────────────────────────────────────────────
 function renderTranscript(interim) {
   if (!finalTranscript && !interim) {
@@ -1475,8 +1620,28 @@ function viewHistoryEntry(id) {
   const entry = loadHistory().find(e => e.id === id);
   if (!entry || !entry.parsed) return;
   renderResult(entry.parsed);
+  // Reopening a past note also resumes it as the active conversation for
+  // "Talk to Rounds" — further feedback edits this saved entry in place.
+  // Past chat messages aren't stored (only the resulting note is), so the
+  // visible chat log starts fresh even though the note/summary/codes are not.
+  currentParsed = entry.parsed;
+  currentRawDictation = entry.rawText || '';
+  currentHistoryId = entry.id;
+  chatFeedbackLog = [];
+  resetChatUI();
   resultStage.style.display = "block";
   resultStage.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+// Applies a "Talk to Rounds" edit to the saved History copy of this note in
+// place, so the saved record reflects the doctor's corrections rather than
+// the original first draft.
+function updateHistoryEntry(id, parsed) {
+  const entries = loadHistory();
+  const idx = entries.findIndex(e => e.id === id);
+  if (idx === -1) return;
+  entries[idx] = Object.assign({}, entries[idx], { parsed: parsed, editedAt: Date.now() });
+  saveHistoryEntries(entries);
+  renderHistoryList();
 }
 historyToggleBtn.addEventListener('click', () => {
   const show = historyStage.style.display === "none";
@@ -1504,6 +1669,97 @@ clearHistoryBtn.addEventListener('click', () => {
   renderHistoryList();
 });
 renderHistoryList(); // set the initial "History (N)" count on page load
+// ─── Shared streaming call to Claude ────────────────────────────────────────────
+// Used by both the initial dictation processing below and the "Talk to
+// Rounds" feedback feature further down, so the streaming/timeout mechanics
+// only need to be gotten right once. Streamed instead of waited-for-all-at-
+// once, because there's no way to know in advance how long a note will take
+// to generate — a marathon multi-hour case can legitimately produce a note
+// many times the size of a routine visit. A fixed overall timeout would
+// either punish a long case that's genuinely still working, or (if set high
+// enough to avoid that) fail to catch a truly dead connection for many
+// minutes. Instead, the abort timer resets on every chunk of text received:
+// a request that's actively producing output is never killed no matter how
+// long it runs in total, but a connection that goes silent gets caught
+// within seconds. Returns { streamedText, stopReason, streamError } on
+// success; throws on a non-OK HTTP response (with .httpStatus set) or a
+// genuine network/abort error, exactly as a plain fetch would, so callers
+// can tell those apart the same way they always have.
+async function callClaudeStreaming(systemPrompt, messages, onProgress) {
+  const apiKey = getApiKey();
+  const controller = new AbortController();
+  const STALL_TIMEOUT_MS = 45000;
+  let stallTimer = null;
+  function resetStallTimer() {
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => controller.abort(), STALL_TIMEOUT_MS);
+  }
+  resetStallTimer();
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 32000,
+        stream: true,
+        system: systemPrompt,
+        messages: messages
+      }),
+      signal: controller.signal
+    });
+    resetStallTimer();
+    if (!response.ok) {
+      clearTimeout(stallTimer);
+      const errData = await response.json().catch(() => ({}));
+      const msg = (errData && errData.error && errData.error.message) || response.statusText || "Unknown error";
+      const err = new Error(msg);
+      err.httpStatus = response.status;
+      throw err;
+    }
+    // Parse the Anthropic streaming (SSE) format directly — text arrives as
+    // a sequence of "data: {...}" lines, each a JSON event. We only need
+    // the text deltas (to build up the final response) and message_delta's
+    // stop_reason (to tell a genuine truncation apart from a parse issue).
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let stopReason = null;
+    let streamError = null;
+    let streamedText = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      resetStallTimer();
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop(); // last entry may be a partial line — keep it for next chunk
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(6)); } catch (e) { continue; }
+        if (evt.type === "content_block_delta" && evt.delta && evt.delta.type === "text_delta") {
+          streamedText += evt.delta.text;
+          if (onProgress) onProgress(streamedText);
+        } else if (evt.type === "message_delta" && evt.delta && evt.delta.stop_reason) {
+          stopReason = evt.delta.stop_reason;
+        } else if (evt.type === "error") {
+          streamError = (evt.error && evt.error.message) || "Streaming error";
+        }
+      }
+    }
+    clearTimeout(stallTimer);
+    return { streamedText, stopReason, streamError };
+  } catch (err) {
+    clearTimeout(stallTimer);
+    throw err;
+  }
+}
 // ─── Main processing function ─────────────────────────────────────────────────
 async function processDictation(rawText) {
   if (!rawText) return;
@@ -1518,6 +1774,7 @@ async function processDictation(rawText) {
   resultStage.style.display = "block";
   codesStage.style.display = "none";
   summaryStage.style.display = "none";
+  chatStage.style.display = "none";
   exportStage.style.display = "none";
   noteEditHint.style.display = "none";
   summaryEditHint.style.display = "none";
@@ -1542,28 +1799,8 @@ ${visitGuidance ? '\n' + visitGuidance + '\n' : ''}
 Return ONLY valid JSON with no markdown fences, no preamble:
 {"note":"full reorganized note as plain text with section headers","patientSummary":"plain-language after-visit summary written for the patient","flags":[{"issue":"brief inconsistency title","detail":"quote or paraphrase of conflicting content"}],"codes":[{"code":"ICD-10: X00.0 or CPT: 99213","label":"human-readable description","rationale":"one sentence tying to dictated content","uncertain":false}]}
 Empty arrays for flags and codes if none apply.`;
-  // Streamed instead of waited-for-all-at-once, because there's no way to
-  // know in advance how long a note will take to generate — a marathon
-  // multi-hour case can legitimately produce a note many times the size of
-  // a routine visit. A fixed overall timeout would either punish a long
-  // case that's genuinely still working, or (if set high enough to avoid
-  // that) fail to catch a truly dead connection for many minutes. Instead,
-  // the abort timer resets on every chunk of text received: a request
-  // that's actively producing output is never killed no matter how long it
-  // runs in total, but a connection that goes silent gets caught within
-  // seconds. The spinner shows live word-count progress so a long run
-  // doesn't look stuck.
-  const controller = new AbortController();
-  const STALL_TIMEOUT_MS = 45000;
-  let stallTimer = null;
-  function resetStallTimer() {
-    clearTimeout(stallTimer);
-    stallTimer = setTimeout(() => controller.abort(), STALL_TIMEOUT_MS);
-  }
-  resetStallTimer();
-  let streamedText = "";
   let lastProgressUpdate = 0;
-  function updateProgress() {
+  function updateProgress(streamedText) {
     const now = Date.now();
     if (now - lastProgressUpdate < 400) return; // throttle DOM writes during a fast stream
     lastProgressUpdate = now;
@@ -1572,127 +1809,210 @@ Empty arrays for flags and codes if none apply.`;
       (words > 0 ? (' written ~' + words.toLocaleString() + ' words so far —') : '') +
       ' this can take several minutes for a long dictation, and keeps going as long as it\'s still actively generating.</div>';
   }
+  let result;
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 32000,
-        stream: true,
-        system: systemPrompt,
-        messages: [{ role: "user", content: "Raw dictation:\n\n" + rawText }]
-      }),
-      signal: controller.signal
-    });
-    resetStallTimer();
-    if (!response.ok) {
-      clearTimeout(stallTimer);
-      const errData = await response.json().catch(() => ({}));
-      const msg = errData?.error?.message || response.statusText || "Unknown error";
-      if (response.status === 401) {
-        resultArea.innerHTML = '<div class="err">Invalid API key. Use "Change saved API key" above to update it — it should start with <code>sk-ant-</code>.</div>';
-      } else {
-        resultArea.innerHTML = '<div class="err">API error ' + response.status + ': ' + escapeHtml(msg) + '</div>';
-      }
-      return;
-    }
-    // Parse the Anthropic streaming (SSE) format directly — text arrives as
-    // a sequence of "data: {...}" lines, each a JSON event. We only need
-    // the text deltas (to build up the final response) and message_delta's
-    // stop_reason (to tell a genuine truncation apart from a parse issue).
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let stopReason = null;
-    let streamError = null;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      resetStallTimer();
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop(); // last entry may be a partial line — keep it for next chunk
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        let evt;
-        try { evt = JSON.parse(line.slice(6)); } catch (e) { continue; }
-        if (evt.type === "content_block_delta" && evt.delta && evt.delta.type === "text_delta") {
-          streamedText += evt.delta.text;
-          updateProgress();
-        } else if (evt.type === "message_delta" && evt.delta && evt.delta.stop_reason) {
-          stopReason = evt.delta.stop_reason;
-        } else if (evt.type === "error") {
-          streamError = (evt.error && evt.error.message) || "Streaming error";
-        }
-      }
-    }
-    clearTimeout(stallTimer);
-    if (streamError) {
-      resultArea.innerHTML = '<div class="err">API error: ' + escapeHtml(streamError) + '</div>';
-      return;
-    }
-    if (!streamedText) {
-      resultArea.innerHTML = '<div class="err">Received an empty response from the API. Please try again.</div>';
-      return;
-    }
-    let parsed;
-    try {
-      const cleaned = streamedText.replace(/```json|```/g, "").trim();
-      parsed = JSON.parse(cleaned);
-    } catch (e) {
-      // The response either got cut off before the JSON was complete
-      // (stop_reason "max_tokens") or came back malformed for some other
-      // reason. Either way, dumping the broken/partial JSON into the note
-      // area as if it were a clinical note is misleading — say plainly
-      // what happened instead, and keep the codes panel hidden since we
-      // have no reliable codes to show.
-      const truncated = stopReason === "max_tokens";
-      resultArea.innerHTML = '<div class="err">' + (truncated
-        ? "The response was cut off before it finished (the dictation may be too long for even the raised output limit). Try again, or process it in two smaller chunks."
-        : "Couldn't parse the AI's response into a note. Please try again.") + '</div>';
-      codesStage.style.display = "none";
-      return;
-    }
-    renderResult(parsed);
-    // Save a copy to the local, on-this-device history log so nothing is
-    // lost once the working transcript is cleared below. See the History
-    // section further down for storage/rendering.
-    addHistoryEntry({
-      id: 'h_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-      savedAt: Date.now(),
-      visitTypeLabel: visitTypeSelect.options[visitTypeSelect.selectedIndex].text,
-      dictationLang: dictationLangSelect.value,
-      rawText: rawText,
-      parsed: parsed
-    });
-    // Fire off the automatic email copy — no button, no prompt. See the
-    // EmailJS section further down for what this does when unconfigured.
-    autoEmailCopy();
-    // Successful run — clear the working transcript so the next dictation
-    // starts fresh instead of silently appending to (and reprocessing)
-    // this visit's already-organized content. Corrections now happen
-    // directly in the editable note/summary above instead.
-    finalTranscript = "";
-    renderTranscript("");
-    resetClock();
-    recLabel.textContent = "Tap to start dictating";
-    recBtn.setAttribute('aria-label', 'Start recording');
-    manualInput.value = "";
+    result = await callClaudeStreaming(
+      systemPrompt,
+      [{ role: "user", content: "Raw dictation:\n\n" + rawText }],
+      updateProgress
+    );
   } catch (err) {
-    clearTimeout(stallTimer);
     if (err.name === 'AbortError') {
       resultArea.innerHTML = '<div class="err">The connection went quiet for over 45 seconds with no data arriving, so the request was stopped — an actively-generating response is never cut off here, only a stalled/dropped one. Check your internet connection and try again.</div>';
+    } else if (err.httpStatus === 401) {
+      resultArea.innerHTML = '<div class="err">Invalid API key. Use "Change saved API key" above to update it — it should start with <code>sk-ant-</code>.</div>';
+    } else if (err.httpStatus) {
+      resultArea.innerHTML = '<div class="err">API error ' + err.httpStatus + ': ' + escapeHtml(err.message) + '</div>';
     } else {
       resultArea.innerHTML = '<div class="err">Network error — check your internet connection and try again.<br><small>' + escapeHtml(err.message) + '</small></div>';
     }
+    return;
+  }
+  const { streamedText, stopReason, streamError } = result;
+  if (streamError) {
+    resultArea.innerHTML = '<div class="err">API error: ' + escapeHtml(streamError) + '</div>';
+    return;
+  }
+  if (!streamedText) {
+    resultArea.innerHTML = '<div class="err">Received an empty response from the API. Please try again.</div>';
+    return;
+  }
+  let parsed;
+  try {
+    const cleaned = streamedText.replace(/```json|```/g, "").trim();
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    // The response either got cut off before the JSON was complete
+    // (stop_reason "max_tokens") or came back malformed for some other
+    // reason. Either way, dumping the broken/partial JSON into the note
+    // area as if it were a clinical note is misleading — say plainly
+    // what happened instead, and keep the codes panel hidden since we
+    // have no reliable codes to show.
+    const truncated = stopReason === "max_tokens";
+    resultArea.innerHTML = '<div class="err">' + (truncated
+      ? "The response was cut off before it finished (the dictation may be too long for even the raised output limit). Try again, or process it in two smaller chunks."
+      : "Couldn't parse the AI's response into a note. Please try again.") + '</div>';
+    codesStage.style.display = "none";
+    return;
+  }
+  renderResult(parsed);
+  // Track this as the active note for the "Talk to Rounds" feedback feature
+  // further down, and start its saved-history entry so feedback edits update
+  // this same record in place rather than creating a duplicate.
+  currentParsed = parsed;
+  currentRawDictation = rawText;
+  chatFeedbackLog = [];
+  currentHistoryId = 'h_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  resetChatUI();
+  // Save a copy to the local, on-this-device history log so nothing is
+  // lost once the working transcript is cleared below. See the History
+  // section further down for storage/rendering.
+  addHistoryEntry({
+    id: currentHistoryId,
+    savedAt: Date.now(),
+    visitTypeLabel: visitTypeSelect.options[visitTypeSelect.selectedIndex].text,
+    dictationLang: dictationLangSelect.value,
+    rawText: rawText,
+    parsed: parsed
+  });
+  // Fire off the automatic email copy — no button, no prompt. See the
+  // EmailJS section further down for what this does when unconfigured.
+  autoEmailCopy();
+  // Successful run — clear the working transcript so the next dictation
+  // starts fresh instead of silently appending to (and reprocessing)
+  // this visit's already-organized content. Corrections now happen via the
+  // "Talk to Rounds" feedback box (or by editing the note/summary directly)
+  // instead.
+  finalTranscript = "";
+  renderTranscript("");
+  resetClock();
+  recLabel.textContent = "Tap to start dictating";
+  recBtn.setAttribute('aria-label', 'Start recording');
+  manualInput.value = "";
+}
+// ─── "Talk to Rounds": conversational feedback on the current note ─────────────
+// Lets the doctor describe corrections or additions in plain language —
+// typed or spoken — after a note has already been generated, instead of
+// having to re-dictate from scratch or hand-edit the note/summary text
+// directly. Each request is self-contained: rather than replaying a growing
+// back-and-forth transcript (which would balloon the request size across a
+// long feedback session), every message sends the ORIGINAL raw dictation
+// plus the CURRENT note/summary/flags/codes read fresh from the page —
+// which naturally also picks up any manual edits made directly in the
+// contenteditable note/summary — plus a short plain-text log of the
+// doctor's own prior feedback asks this session (for continuity, e.g. "also
+// undo that last change"), plus the new request. The model always returns
+// the complete updated state, which simply replaces what's on screen.
+const FEEDBACK_SYSTEM_PROMPT = `You are a clinical dictation assistant continuing a conversation with a doctor about a clinical note you already generated for them. You will be given the original raw dictation for reference, the current note/patient summary/flags/codes as they stand right now, a log of the doctor's own prior feedback already applied this session, and a new piece of feedback from the doctor (typed or spoken, so treat casual phrasing, filler words, and minor transcription quirks charitably).
+Apply exactly what the doctor is asking for now, preserving everything else in the note/summary/flags/codes unchanged unless it logically must also change as a result (e.g. correcting a medication might also require updating a related billing code or resolving a flag about it). Never invent new clinical facts beyond what the doctor's feedback states or what was in the original dictation. If a request is ambiguous, make your best reasonable interpretation and briefly say so in your reply rather than refusing.
+Return ONLY valid JSON with no markdown fences, no preamble, in this exact schema:
+{"reply":"one or two plain-English sentences addressed to the doctor confirming what you changed","note":"the complete updated note as plain text with section headers","patientSummary":"the complete updated patient-facing summary","flags":[{"issue":"brief inconsistency title","detail":"quote or paraphrase of conflicting content"}],"codes":[{"code":"ICD-10: X00.0 or CPT: 99213","label":"human-readable description","rationale":"one sentence tying to dictated content","uncertain":false}]}
+Always return the COMPLETE note, patientSummary, flags, and codes reflecting the change — never a partial excerpt or a diff.`;
+function buildFeedbackPrompt(text) {
+  const liveNoteEl = resultArea.querySelector('.note-output');
+  const liveSummaryEl = summaryArea.querySelector('.note-output');
+  const noteText = liveNoteEl ? liveNoteEl.innerText : ((currentParsed && currentParsed.note) || '');
+  const summaryText = liveSummaryEl ? liveSummaryEl.innerText : ((currentParsed && currentParsed.patientSummary) || '');
+  const flags = (currentParsed && currentParsed.flags) || [];
+  const codes = (currentParsed && currentParsed.codes) || [];
+  let priorAsksBlock = '';
+  if (chatFeedbackLog.length > 0) {
+    priorAsksBlock = "PRIOR FEEDBACK ALREADY APPLIED THIS SESSION (for context only — already reflected below, do not re-apply):\n" +
+      chatFeedbackLog.map((t, i) => (i + 1) + ". " + t).join('\n') + "\n\n";
+  }
+  return "ORIGINAL RAW DICTATION (for reference/context only):\n" + currentRawDictation +
+    "\n\n" + priorAsksBlock +
+    "CURRENT NOTE:\n" + noteText +
+    "\n\nCURRENT PATIENT SUMMARY:\n" + summaryText +
+    "\n\nCURRENT FLAGS (JSON):\n" + JSON.stringify(flags) +
+    "\n\nCURRENT CODES (JSON):\n" + JSON.stringify(codes) +
+    "\n\nDOCTOR'S NEW FEEDBACK:\n" + text;
+}
+let chatBubbleSeq = 0;
+function appendChatBubble(kind, text) {
+  const id = 'chat-b-' + (chatBubbleSeq++);
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + kind;
+  div.id = id;
+  div.textContent = text;
+  chatLog.appendChild(div);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  return id;
+}
+function updateChatBubble(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+function removeChatBubble(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+function resetChatUI() {
+  chatLog.innerHTML = '';
+  chatInput.value = '';
+  chatErr.textContent = '';
+  chatStage.style.display = 'block';
+}
+async function sendChatFeedback(rawFeedback) {
+  const text = (rawFeedback || '').trim();
+  if (!text || chatSending) return;
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    chatErr.textContent = "No API key saved. Enter your Anthropic API key in the setup box at the top of the page.";
+    return;
+  }
+  chatErr.textContent = '';
+  chatSending = true;
+  chatSendBtn.disabled = true;
+  chatInput.value = '';
+  appendChatBubble('user', text);
+  const pendingId = appendChatBubble('pending', 'Reviewing the note…');
+  const userPrompt = buildFeedbackPrompt(text);
+  try {
+    const { streamedText, stopReason, streamError } = await callClaudeStreaming(
+      FEEDBACK_SYSTEM_PROMPT,
+      [{ role: 'user', content: userPrompt }],
+      (partial) => {
+        const words = partial.trim() ? partial.trim().split(/\s+/).length : 0;
+        updateChatBubble(pendingId, words > 0 ? ('Updating the note… ~' + words.toLocaleString() + ' words so far') : 'Reviewing the note…');
+      }
+    );
+    if (streamError) throw new Error(streamError);
+    if (!streamedText) throw new Error('Received an empty response from the API.');
+    let parsed;
+    try {
+      parsed = JSON.parse(streamedText.replace(/```json|```/g, '').trim());
+    } catch (e) {
+      throw new Error(stopReason === 'max_tokens'
+        ? "The response was cut off before it finished — try breaking your feedback into smaller requests."
+        : "Couldn't understand the AI's response — please try rephrasing.");
+    }
+    currentParsed = parsed;
+    renderResult(parsed);
+    chatFeedbackLog.push(text);
+    if (currentHistoryId) updateHistoryEntry(currentHistoryId, parsed);
+    // Keep the emailed copy current with the doctor's edits, same as the
+    // silent auto-email after the initial processing above.
+    autoEmailCopy();
+    removeChatBubble(pendingId);
+    appendChatBubble('assistant', parsed.reply || 'Updated the note.');
+  } catch (err) {
+    removeChatBubble(pendingId);
+    appendChatBubble('error-msg', err.name === 'AbortError'
+      ? "The connection went quiet for too long, so the request was stopped. Try again."
+      : (err.message || 'Something went wrong — try again.'));
+  } finally {
+    chatSending = false;
+    chatSendBtn.disabled = false;
   }
 }
+chatSendBtn.addEventListener('click', () => sendChatFeedback(chatInput.value));
+chatInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    sendChatFeedback(chatInput.value);
+  }
+});
 // ─── Copy buttons ─────────────────────────────────────────────────────────────
 async function copyText(el, btn, originalLabel) {
   try {
